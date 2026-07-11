@@ -1,0 +1,18 @@
+{
+  "name": "Xenilum · Consola de Inteligencia",
+  "short_name": "Xenilum",
+  "description": "Consola de inteligencia de Autónoma System — CRM conversacional con avisos.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#04101F",
+  "theme_color": "#04101F",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

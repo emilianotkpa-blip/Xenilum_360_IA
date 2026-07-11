@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Xenilum">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0E2340"/><stop offset="1" stop-color="#04101F"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F5E3B3"/><stop offset="0.5" stop-color="#E4B95B"/><stop offset="1" stop-color="#C9A24A"/>
+    </linearGradient>
+    <linearGradient id="bot" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C9A24A"/><stop offset="1" stop-color="#8A6D2E"/>
+    </linearGradient>
+  </defs>
+  <!-- Fondo full-bleed (maskable: el launcher recorta la forma) -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Isotipo Prisma centrado dentro de la zona segura -->
+  <g transform="translate(106 106) scale(3)">
+    <path d="M22 20 L50 44 L78 20 L78 34 L50 58 L22 34 Z" fill="url(#top)"/>
+    <path d="M22 80 L50 56 L78 80 L78 66 L50 42 L22 66 Z" fill="url(#bot)" opacity="0.92"/>
+  </g>
+</svg>

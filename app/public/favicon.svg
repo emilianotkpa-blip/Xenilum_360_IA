@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Xenilum">
+  <rect width="100" height="100" rx="24" fill="#0A2342"/>
+  <path d="M16 14 L50 44 L84 14 L84 34 L50 64 L16 34 Z" fill="#E4B95B"/>
+  <path d="M16 86 L50 56 L84 86 L84 66 L50 36 L16 66 Z" fill="#C9A24A"/>
+</svg>

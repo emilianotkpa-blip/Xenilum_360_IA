@@ -1,0 +1,6 @@
+# Los JSON de workflows y las referencias contienen tokens inline (NocoDB xc-token,
+# service_role, XEN_KEY) — mismo criterio que la carpeta gateway/ del CRM.
+# No versionar en un repo público.
+reference/
+workflows/*.json
+SECRETS.local.md

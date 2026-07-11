@@ -1,0 +1,28 @@
+# === Dependencias / build ===
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+*.log
+npm-debug.log*
+
+# === Entorno / secretos (NUNCA versionar) ===
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Secretos y respaldos con tokens inline del backend
+**/SECRETS.local.md
+backend/reference/
+backend/workflows/*.json
+
+# === SO / editor ===
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
