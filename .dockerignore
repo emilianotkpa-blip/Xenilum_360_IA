@@ -1,0 +1,10 @@
+# Contexto de build = raíz del repo. Excluye lo pesado/innecesario.
+.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+Datos Xenilum/
+backend/

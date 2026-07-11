@@ -19,9 +19,11 @@ npm run preview         # sirve dist/ en :5175 para probar
 ## Deploy en EasyPanel (tipo **Dockerfile**)
 El [`Dockerfile`](./Dockerfile) es multi-stage: compila con Node y sirve `dist/` con nginx (config en [`nginx.conf`](./nginx.conf), con fallback SPA, no-cache del `sw.js` y mime del manifest).
 
+> **Nota deploy:** EasyPanel usa el **`Dockerfile` de la raíz del repo** (contexto = raíz), que compila esta carpeta `app/`. Este `app/Dockerfile` es para builds locales con contexto = `app/`.
+
 **Pasos:**
 1. **Create App → Source:** repo `emilianotkpa-blip/Xenilum_360_IA`, branch `main`.
-2. **Build:** método **Dockerfile**. Build context / Dockerfile path apuntando a la carpeta **`app`** (ahí viven el `Dockerfile` y `package.json`).
+2. **Build:** método **Dockerfile** (con la config por defecto: contexto = raíz, `Dockerfile` en la raíz). No hay que apuntar a subcarpeta.
 3. **Build Args** (se hornean en el bundle público — no pongas llaves privadas):
 
    | Arg | Valor |
