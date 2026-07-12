@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { supabase } from "./session.js";
+import AmbientBackground from "./AmbientBackground.jsx";
 
 const NAVY_DEEP = "#04101F";
 const GOLD = "#C9A24A";
@@ -51,13 +52,18 @@ export default function Login() {
           "radial-gradient(80% 60% at 78% 8%, rgba(201,162,74,.20), transparent 55%)," +
           "radial-gradient(70% 55% at 10% 96%, rgba(43,92,230,.18), transparent 55%)," +
           "linear-gradient(165deg, #0E2340, #04101F 75%)",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
+      <AmbientBackground />
       <form
         onSubmit={submit}
         style={{
           width: "100%",
           maxWidth: 380,
+          position: "relative",
+          zIndex: 1,
           background: "rgba(20,28,42,.72)",
           backdropFilter: "blur(22px)",
           WebkitBackdropFilter: "blur(22px)",
