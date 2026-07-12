@@ -927,14 +927,18 @@ export default function XenilumChat() {
   const [presented, setPresented] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 760);
   const [reportCount, setReportCount] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
   const [recording, setRecording] = useState(false);
+  const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const scrollRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const baseInputRef = useRef("");
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") setPresented(null); };
@@ -944,6 +948,11 @@ export default function XenilumChat() {
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 2000);
     return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 760);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, thinking]);
 
@@ -1016,24 +1025,23 @@ export default function XenilumChat() {
     }
   };
 
-  const sendAudio = async (base64, format) => {
-    if (thinking) return;
-    setThinking(true); setTranscribing(true);
+  // Reconocimiento de voz en vivo del navegador (Chrome/Edge/Android). Si no existe → fallback Whisper.
+  const SpeechRec = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  // Fallback: sube el audio, transcribe y RELLENA el input (no envía). El usuario revisa y manda.
+  const transcribeToInput = async (base64, format) => {
+    setTranscribing(true);
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 45000);
     try {
-      const res = await fetch(`${API_BASE}/xenilum/chat`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ type: "audio", data: base64, format, userId: getUserEmail(), conversationId }), signal: ctrl.signal });
+      const res = await fetch(`${API_BASE}/xenilum/chat`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ type: "audio", data: base64, format, transcribeOnly: true, userId: getUserEmail(), conversationId }), signal: ctrl.signal });
       const data = await res.json();
-      if (data.conversationId) setConversationId(data.conversationId);
-      const userText = data.transcription || "🎤 (audio)";
-      setMessages((m) => [...m, { role: "user", text: userText }, { role: "assistant", blocks: (data.blocks && data.blocks.length) ? data.blocks : [{ type: "text", content: "Respuesta vacía." }] }]);
-    } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", blocks: [{ type: "callout", variant: "warning", content: e.name === "AbortError" ? "La transcripción tardó demasiado. Reintenta." : "No pude procesar el audio." }] }]);
-    } finally { clearTimeout(to); setThinking(false); setTranscribing(false); loadConversations(); }
+      const t = (data.transcription || "").trim();
+      if (t) setInput((prev) => (prev ? prev.replace(/\s+$/, "") + " " : "") + t);
+    } catch (e) { /* silencioso */ } finally { clearTimeout(to); setTranscribing(false); }
   };
 
-  const toggleMic = async () => {
-    if (recording) { try { recorderRef.current && recorderRef.current.stop(); } catch (e) {} return; }
+  const startWhisperRecording = async () => {
     if (thinking) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1044,7 +1052,7 @@ export default function XenilumChat() {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
         const reader = new FileReader();
-        reader.onloadend = () => { const b64 = String(reader.result).split(",")[1]; if (b64) sendAudio(b64, "webm"); };
+        reader.onloadend = () => { const b64 = String(reader.result).split(",")[1]; if (b64) transcribeToInput(b64, "webm"); };
         reader.readAsDataURL(blob);
         setRecording(false);
       };
@@ -1054,9 +1062,44 @@ export default function XenilumChat() {
     }
   };
 
+  const toggleMic = () => {
+    // Dictado en vivo (preferido): escribe en el input mientras hablas; revisas/editas y TÚ envías.
+    if (SpeechRec) {
+      if (listening) { try { recognitionRef.current && recognitionRef.current.stop(); } catch (e) {} return; }
+      if (thinking) return;
+      try {
+        const rec = new SpeechRec();
+        rec.lang = "es-MX";
+        rec.continuous = true;
+        rec.interimResults = true;
+        baseInputRef.current = input ? input.replace(/\s+$/, "") + " " : "";
+        rec.onresult = (ev) => {
+          let finalT = "", interim = "";
+          for (let i = 0; i < ev.results.length; i++) {
+            const r = ev.results[i];
+            if (r.isFinal) finalT += r[0].transcript;
+            else interim += r[0].transcript;
+          }
+          setInput(baseInputRef.current + finalT + interim);
+        };
+        rec.onerror = () => setListening(false);
+        rec.onend = () => { setListening(false); recognitionRef.current = null; };
+        recognitionRef.current = rec;
+        rec.start();
+        setListening(true);
+      } catch (e) { setListening(false); startWhisperRecording(); }
+      return;
+    }
+    // Fallback (navegadores sin Web Speech): grabar → transcribir → rellenar input.
+    if (recording) { try { recorderRef.current && recorderRef.current.stop(); } catch (e) {} return; }
+    startWhisperRecording();
+  };
+
   const send = async (text) => {
+    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} recognitionRef.current = null; setListening(false); }
     const msg = (text ?? input).trim();
     if (!msg || thinking) return;
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
     if (msg === "✦ Bloques nuevos (demo)") {
       setMessages((m) => [...m, { role: "user", text: "Muéstrame los bloques nuevos" }, { role: "assistant", blocks: DEMO_FASE2 }]);
       return;
@@ -1095,6 +1138,10 @@ export default function XenilumChat() {
         @keyframes xenRise { from { opacity: 0; transform: translateY(14px);} to { opacity: 1; transform: translateY(0);} }
         .xen-dot { width: 7px; height: 7px; border-radius: 50%; background: ${GOLD_LIGHT}; display:inline-block; animation: xenPulse 1.2s ease-in-out infinite; }
         .xen-msg { animation: xenRise 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+        @keyframes xenInRight { from { opacity: 0; transform: translateX(26px) translateY(6px) scale(0.96); } 55% { opacity: 1; } to { opacity: 1; transform: none; } }
+        @keyframes xenInLeft { from { opacity: 0; transform: translateX(-18px) translateY(8px); } to { opacity: 1; transform: none; } }
+        .xen-msg-user { animation: xenInRight 0.44s cubic-bezier(0.34,1.42,0.5,1) both; }
+        .xen-msg-bot { animation: xenInLeft 0.5s cubic-bezier(0.22,1,0.36,1) both; }
         .xen-row:hover td { background: rgba(201,162,74,0.05); }
         .xen-check:hover { background: rgba(201,162,74,0.06) !important; }
         .xen-export { transition: all 0.2s ease; }
@@ -1103,6 +1150,8 @@ export default function XenilumChat() {
         .xen-chip:hover { border-color: rgba(228,185,91,0.7) !important; background: rgba(201,162,74,0.12) !important; transform: translateY(-1px); }
         .xen-send { transition: all 0.2s ease; }
         .xen-send:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(201,162,74,0.45) !important; }
+        .xen-send:active { transform: scale(0.94); }
+        .xen-chip:active { transform: scale(0.97); }
         @keyframes xenMic { 0%,100% { box-shadow: 0 0 0 0 rgba(232,139,139,0.55); } 50% { box-shadow: 0 0 0 7px rgba(232,139,139,0); } }
         .xen-mic-rec { animation: xenMic 1.1s ease-in-out infinite; }
         .xen-input:focus { outline: none; border-color: rgba(228,185,91,0.6) !important; }
@@ -1129,7 +1178,7 @@ export default function XenilumChat() {
         @keyframes splBot { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .spl-word { animation: splUp 0.6s ease 0.55s both; } .spl-tag { animation: splUp 0.6s ease 0.8s both; }
         @keyframes splUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .xen-orb, .xen-msg, .xen-dot, .xen-think-top, .xen-think-bot, .xen-rep-top, .xen-rep-bot, .spl-top, .spl-bot, .spl-word, .spl-tag, .splash-overlay { animation: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .xen-orb, .xen-msg, .xen-msg-user, .xen-msg-bot, .xen-dot, .xen-think-top, .xen-think-bot, .xen-rep-top, .xen-rep-bot, .spl-top, .spl-bot, .spl-word, .spl-tag, .splash-overlay { animation: none !important; } }
       `}</style>
 
       <div className="xen-orb" style={{ width: 380, height: 380, top: "-8%", left: "-6%", background: "radial-gradient(circle, rgba(201,162,74,0.5), transparent 70%)", animation: "xenFloat1 22s ease-in-out infinite" }} />
@@ -1137,8 +1186,22 @@ export default function XenilumChat() {
       <div className="xen-orb" style={{ width: 220, height: 220, top: "40%", right: "22%", background: "radial-gradient(circle, rgba(201,162,74,0.3), transparent 70%)", animation: "xenFloat3 26s ease-in-out infinite" }} />
 
       <div style={{ position: "relative", height: "100%", display: "flex" }}>
-        {/* Sidebar de conversaciones */}
-        <aside style={{ width: sidebarOpen ? 264 : 0, flexShrink: 0, overflow: "hidden", transition: "width 0.28s cubic-bezier(0.22,1,0.36,1)", borderRight: sidebarOpen ? "1px solid rgba(201,162,74,0.16)" : "none", display: "flex", flexDirection: "column", background: "rgba(4,16,31,0.35)", backdropFilter: "blur(10px)" }}>
+        {/* Sidebar de conversaciones — en móvil es un drawer que flota sobre el chat */}
+        <aside style={{
+          ...(isMobile
+            ? { position: "absolute", top: 0, bottom: 0, left: 0, width: 284, zIndex: 45,
+                transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+                transition: "transform 0.28s cubic-bezier(0.22,1,0.36,1)",
+                borderRight: "1px solid rgba(201,162,74,0.16)",
+                boxShadow: sidebarOpen ? "0 0 50px rgba(0,0,0,0.55)" : "none",
+                background: "rgba(6,16,30,0.97)" }
+            : { width: sidebarOpen ? 264 : 0, flexShrink: 0,
+                transition: "width 0.28s cubic-bezier(0.22,1,0.36,1)",
+                borderRight: sidebarOpen ? "1px solid rgba(201,162,74,0.16)" : "none",
+                background: "rgba(4,16,31,0.35)" }),
+          overflow: "hidden", display: "flex", flexDirection: "column",
+          backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+        }}>
           <div style={{ padding: "16px 14px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <span style={{ fontFamily: "'Sora', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED }}>Conversaciones</span>
             <button className="xen-send" onClick={newConversation} title="Nueva conversación" style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 12.5, color: NAVY_DEEP, background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, border: "none", borderRadius: 9, padding: "5px 11px", cursor: "pointer", whiteSpace: "nowrap" }}>+ Nueva</button>
@@ -1160,27 +1223,30 @@ export default function XenilumChat() {
             })}
           </div>
         </aside>
+        {isMobile && sidebarOpen && (
+          <div onClick={() => setSidebarOpen(false)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "rgba(2,6,14,0.5)" }} />
+        )}
         {/* Columna principal */}
-        <div style={{ position: "relative", flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", maxWidth: 860, margin: "0 auto", padding: "0 16px" }}>
-        <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 4px 14px", borderBottom: "1px solid rgba(201,162,74,0.18)" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", maxWidth: 860, margin: "0 auto", padding: isMobile ? "0 12px" : "0 16px" }}>
+        <header style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, padding: isMobile ? "14px 2px 12px" : "18px 4px 14px", borderBottom: "1px solid rgba(201,162,74,0.18)" }}>
           <button onClick={() => setSidebarOpen((v) => !v)} title="Mostrar/ocultar conversaciones" className="xen-export" style={{ fontSize: 17, lineHeight: 1, color: GOLD_LIGHT, background: "rgba(201,162,74,0.1)", border: "1px solid rgba(201,162,74,0.35)", borderRadius: 9, padding: "7px 10px", cursor: "pointer", flexShrink: 0 }}>☰</button>
-          <XenAvatar size={46} motion="idle" />
-          <div>
+          <XenAvatar size={isMobile ? 36 : 46} motion="idle" />
+          <div style={{ minWidth: 0 }}>
             <div style={{
-              fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: 20, lineHeight: 1.1,
+              fontFamily: "'Sora', sans-serif", fontWeight: 800, fontSize: isMobile ? 17 : 20, lineHeight: 1.1,
               background: `linear-gradient(90deg, ${GOLD} 0%, #F5E3B3 25%, ${GOLD_LIGHT} 50%, ${GOLD} 75%, #F5E3B3 100%)`,
               backgroundSize: "200% auto", WebkitBackgroundClip: "text", backgroundClip: "text",
               WebkitTextFillColor: "transparent", animation: "xenShimmer 6s linear infinite",
             }}>XENILUM</div>
-            <div style={{ fontFamily: "Inter", fontSize: 11.5, color: MUTED, letterSpacing: "0.08em", textTransform: "uppercase" }}>Consola de inteligencia · Autónoma System</div>
+            {!isMobile && <div style={{ fontFamily: "Inter", fontSize: 11.5, color: MUTED, letterSpacing: "0.08em", textTransform: "uppercase" }}>Consola de inteligencia · Autónoma System</div>}
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
             {reportCount > 0 && (
               <span title={`${reportCount} reporte(s) nuevo(s)`} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "'Sora', sans-serif", fontSize: 12, fontWeight: 700, color: NAVY_DEEP, background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, borderRadius: 999, padding: "3px 10px", boxShadow: "0 2px 10px rgba(201,162,74,0.4)" }}>📊 {reportCount}</span>
             )}
             <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, boxShadow: "0 0 8px rgba(127,214,164,0.8)" }} />
-              <span style={{ fontFamily: "Inter", fontSize: 12, color: MUTED }}>Conectado</span>
+              {!isMobile && <span style={{ fontFamily: "Inter", fontSize: 12, color: MUTED }}>Conectado</span>}
             </span>
             <button onClick={() => signOut()} title="Cerrar sesión" className="xen-export" style={{ fontFamily: "Inter", fontSize: 12, color: MUTED, background: "rgba(201,162,74,0.08)", border: "1px solid rgba(201,162,74,0.28)", borderRadius: 9, padding: "6px 10px", cursor: "pointer", flexShrink: 0 }}>Salir</button>
           </div>
@@ -1189,7 +1255,7 @@ export default function XenilumChat() {
         <div ref={scrollRef} className="xen-scroll" style={{ flex: 1, overflowY: "auto", padding: "22px 4px", display: "flex", flexDirection: "column", gap: 20 }}>
           {messages.map((m, i) =>
             m.role === "user" ? (
-              <div key={i} className="xen-msg" style={{ alignSelf: "flex-end", maxWidth: "78%" }}>
+              <div key={i} className="xen-msg xen-msg-user" style={{ alignSelf: "flex-end", maxWidth: "82%" }}>
                 <div style={{
                   fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.55, color: NAVY_DEEP,
                   background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, padding: "11px 16px",
@@ -1197,7 +1263,7 @@ export default function XenilumChat() {
                 }}>{m.text}</div>
               </div>
             ) : (
-              <div key={i} className="xen-msg" style={{ display: "flex", gap: 12, maxWidth: "100%" }}>
+              <div key={i} className="xen-msg xen-msg-bot" style={{ display: "flex", gap: 12, maxWidth: "100%" }}>
                 <XenAvatar size={38} motion={m.report ? "notify" : undefined} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {m.report && (
@@ -1234,25 +1300,28 @@ export default function XenilumChat() {
 
         <div style={{ paddingBottom: 20 }}>
           <div style={{
-            display: "flex", gap: 10, alignItems: "center", background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(201,162,74,0.28)", borderRadius: 18, padding: "8px 8px 8px 18px",
+            display: "flex", gap: isMobile ? 7 : 10, alignItems: "center", background: "rgba(255,255,255,0.05)",
+            border: `1px solid ${listening ? "rgba(232,139,139,0.55)" : "rgba(201,162,74,0.28)"}`, borderRadius: 18,
+            padding: isMobile ? "7px 7px 7px 14px" : "8px 8px 8px 18px",
             backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            transition: "border-color 0.2s ease",
           }}>
             <input className="xen-input" value={input} onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Pregúntale a Xenilum sobre la agencia…"
-              style={{ flex: 1, background: "transparent", border: "none", fontFamily: "Inter", fontSize: 14.5, color: INK, padding: "8px 0" }} />
-            <button className={recording ? "xen-mic-rec" : "xen-send"} onClick={toggleMic} disabled={thinking && !recording}
-              title={recording ? "Detener y enviar" : "Grabar voz"} style={{
-                fontFamily: "Inter", fontWeight: 700, fontSize: 15, lineHeight: 1,
-                color: recording ? "#fff" : GOLD_LIGHT, background: recording ? RED : "rgba(201,162,74,0.12)",
-                border: recording ? "none" : "1px solid rgba(201,162,74,0.4)", borderRadius: 12,
-                padding: "10px 13px", cursor: thinking && !recording ? "default" : "pointer", opacity: thinking && !recording ? 0.5 : 1,
-              }}>{recording ? "■" : "🎤"}</button>
-            <button className="xen-send" onClick={() => send()} disabled={thinking} style={{
-              fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 13.5, color: NAVY_DEEP,
-              background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, border: "none", borderRadius: 12,
-              padding: "11px 20px", cursor: "pointer", boxShadow: "0 4px 14px rgba(201,162,74,0.35)", opacity: thinking ? 0.6 : 1,
-            }}>Enviar</button>
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              placeholder={listening ? "Escuchando… habla 🎙️" : (transcribing ? "Transcribiendo…" : "Pregúntale a Xenilum…")}
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", fontFamily: "Inter", fontSize: 14.5, color: INK, padding: "8px 0" }} />
+            <button className={(listening || recording) ? "xen-mic-rec" : "xen-send"} onClick={toggleMic} disabled={thinking && !(listening || recording)}
+              title={(listening || recording) ? "Detener dictado" : (SpeechRec ? "Dictar por voz" : "Grabar voz")} style={{
+                fontFamily: "Inter", fontWeight: 700, fontSize: 15, lineHeight: 1, flexShrink: 0,
+                color: (listening || recording) ? "#fff" : GOLD_LIGHT, background: (listening || recording) ? RED : "rgba(201,162,74,0.12)",
+                border: (listening || recording) ? "none" : "1px solid rgba(201,162,74,0.4)", borderRadius: 12,
+                padding: isMobile ? "9px 11px" : "10px 13px", cursor: thinking && !(listening || recording) ? "default" : "pointer", opacity: thinking && !(listening || recording) ? 0.5 : 1,
+              }}>{(listening || recording) ? "■" : "🎤"}</button>
+            <button className="xen-send" onClick={() => send()} disabled={thinking} title="Enviar" style={{
+              fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: isMobile ? 16 : 13.5, color: NAVY_DEEP,
+              background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, border: "none", borderRadius: 12, flexShrink: 0,
+              padding: isMobile ? "10px 14px" : "11px 20px", cursor: "pointer", boxShadow: "0 4px 14px rgba(201,162,74,0.35)", opacity: thinking ? 0.6 : 1,
+            }}>{isMobile ? "➤" : "Enviar"}</button>
           </div>
           <div style={{ fontFamily: "Inter", fontSize: 11, color: "rgba(159,176,198,0.55)", textAlign: "center", marginTop: 10 }}>
             Conectado a n8n · datos reales de NocoDB + Supabase
