@@ -214,7 +214,7 @@ function TypeText({ text, animate, style }) {
   return <p style={style}>{full.slice(0, shown)}{!done && <span className="xen-caret">▍</span>}</p>;
 }
 
-// Fondo de cenizas doradas premium (brasas que suben, con brillo y parpadeo).
+// Fondo de cenizas doradas: partículas pequeñas y tenues que suben y se apagan a ~3/4 de altura.
 function EmbersCanvas() {
   const ref = useRef(null);
   useEffect(() => {
@@ -223,14 +223,23 @@ function EmbersCanvas() {
     const ctx = canvas.getContext("2d");
     let w = 0, h = 0, raf;
     const parts = [];
-    const COUNT = 46;
+    const COUNT = 54;
+    const RISE = 0.75; // suben hasta el 75% de la altura (desde abajo)
     const rnd = (a, b) => a + Math.random() * (b - a);
-    const spawn = (initial) => ({
-      x: Math.random() * (w || window.innerWidth),
-      y: initial ? Math.random() * (h || window.innerHeight) : (h || window.innerHeight) + 12,
-      r: rnd(0.6, 2.4), vy: rnd(0.15, 0.7), vx: rnd(-0.22, 0.22),
-      life: 0, ttl: rnd(340, 760), hue: rnd(38, 48), flick: Math.random() * Math.PI * 2,
-    });
+    const spawn = (initial) => {
+      const hh = h || window.innerHeight;
+      return {
+        x: Math.random() * (w || window.innerWidth),
+        y: initial ? rnd(hh * (1 - RISE), hh) : hh + rnd(2, 24),
+        r: rnd(0.3, 1.15),            // más pequeñas
+        vy: rnd(0.10, 0.38),          // más lentas
+        vx: rnd(-0.10, 0.10),
+        sway: rnd(0.004, 0.012),
+        swayAmp: rnd(0.04, 0.14),
+        phase: Math.random() * Math.PI * 2,
+        hue: rnd(28, 42),             // ámbar/ceniza cálida (menos neón)
+      };
+    };
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       w = window.innerWidth; h = window.innerHeight;
@@ -243,18 +252,26 @@ function EmbersCanvas() {
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
       ctx.globalCompositeOperation = "lighter";
+      const travel = h * RISE;
       for (const p of parts) {
-        p.life++;
+        p.phase += p.sway;
         p.y -= p.vy;
-        p.x += p.vx + Math.sin(p.life * 0.02 + p.flick) * 0.12;
-        if (p.y < -12 || p.life > p.ttl) { Object.assign(p, spawn(false)); continue; }
-        const lifeP = p.life / p.ttl;
-        const alpha = Math.sin(Math.min(lifeP, 1) * Math.PI) * (0.55 + 0.45 * Math.sin(p.flick + p.life * 0.1)) * 0.8;
-        const rad = p.r * 4;
+        p.x += p.vx + Math.sin(p.phase) * p.swayAmp;
+        const prog = Math.max(0, Math.min((h - p.y) / travel, 1)); // 0 abajo -> 1 a 3/4
+        if (prog >= 1) { Object.assign(p, spawn(false)); continue; }
+        // Aparece abajo, se mantiene, y se apaga como ceniza al acercarse a 3/4.
+        let env;
+        if (prog < 0.1) env = prog / 0.1;
+        else if (prog > 0.55) env = Math.max(0, (1 - prog) / 0.45);
+        else env = 1;
+        const flicker = 0.92 + 0.08 * Math.sin(p.phase * 2.1); // parpadeo muy suave
+        const alpha = env * flicker * 0.42;                    // tenue
+        if (alpha <= 0.01) continue;
+        const rad = p.r * 2.2; // glow ceñido (no aura de luciérnaga)
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
-        g.addColorStop(0, `hsla(${p.hue}, 90%, 68%, ${Math.max(0, alpha)})`);
-        g.addColorStop(0.4, `hsla(${p.hue}, 85%, 55%, ${Math.max(0, alpha * 0.5)})`);
-        g.addColorStop(1, `hsla(${p.hue}, 85%, 50%, 0)`);
+        g.addColorStop(0, `hsla(${p.hue}, 75%, 58%, ${alpha})`);
+        g.addColorStop(0.5, `hsla(${p.hue}, 70%, 48%, ${alpha * 0.4})`);
+        g.addColorStop(1, `hsla(${p.hue}, 68%, 44%, 0)`);
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
