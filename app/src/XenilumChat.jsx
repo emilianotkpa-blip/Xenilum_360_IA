@@ -3,6 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
+import { authHeaders, getUserEmail, signOut } from "./session.js";
 
 // ============================================================
 // XENILUM · Consola de Inteligencia — Autónoma System
@@ -23,14 +24,7 @@ const GOLD_SERIES = ["#C9A24A", "#E4B95B", "#8A6D2F", "#F0D48A", "#6E5626"];
 
 // ---------- Config backend ----------
 const API_BASE = import.meta.env.VITE_API_BASE || "https://prueba-n8n-prueba.urdzg3.easypanel.host/webhook/api";
-const XEN_KEY = import.meta.env.VITE_XEN_KEY || "";
-const USER_EMAIL = import.meta.env.VITE_USER_EMAIL || "emilianotkpa@gmail.com";
-
-function authHeaders(extra) {
-  const h = { "Content-Type": "application/json", ...(extra || {}) };
-  if (XEN_KEY) h["x-xenilum-key"] = XEN_KEY;
-  return h;
-}
+// authHeaders (JWT Supabase) y getUserEmail vienen de session.js.
 
 const SUGGESTIONS = [
   { key: "ingresos", label: "¿Cuánto facturamos este mes?" },
@@ -955,7 +949,7 @@ export default function XenilumChat() {
 
   const loadConversations = async () => {
     try {
-      const res = await fetch(`${API_BASE}/xenilum/conversations?user=${encodeURIComponent(USER_EMAIL)}`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE}/xenilum/conversations?user=${encodeURIComponent(getUserEmail())}`, { headers: authHeaders() });
       const data = await res.json();
       if (data && data.conversations) setConversations(data.conversations);
     } catch (e) { /* offline */ }
@@ -1005,7 +999,7 @@ export default function XenilumChat() {
 
   const runAction = async (actionId, params) => {
     try {
-      const res = await fetch(`${API_BASE}/xenilum/action`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ actionId, params, userId: USER_EMAIL }) });
+      const res = await fetch(`${API_BASE}/xenilum/action`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ actionId, params, userId: getUserEmail() }) });
       const data = await res.json();
       if (data.url) {
         setMessages((m) => [...m, { role: "assistant", blocks: [
@@ -1028,7 +1022,7 @@ export default function XenilumChat() {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 45000);
     try {
-      const res = await fetch(`${API_BASE}/xenilum/chat`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ type: "audio", data: base64, format, userId: USER_EMAIL, conversationId }), signal: ctrl.signal });
+      const res = await fetch(`${API_BASE}/xenilum/chat`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ type: "audio", data: base64, format, userId: getUserEmail(), conversationId }), signal: ctrl.signal });
       const data = await res.json();
       if (data.conversationId) setConversationId(data.conversationId);
       const userText = data.transcription || "🎤 (audio)";
@@ -1075,7 +1069,7 @@ export default function XenilumChat() {
     try {
       const res = await fetch(`${API_BASE}/xenilum/chat`, {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ message: msg, userId: USER_EMAIL, conversationId }), signal: ctrl.signal,
+        body: JSON.stringify({ message: msg, userId: getUserEmail(), conversationId }), signal: ctrl.signal,
       });
       const data = await res.json();
       if (data.conversationId) setConversationId(data.conversationId);
@@ -1188,6 +1182,7 @@ export default function XenilumChat() {
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, boxShadow: "0 0 8px rgba(127,214,164,0.8)" }} />
               <span style={{ fontFamily: "Inter", fontSize: 12, color: MUTED }}>Conectado</span>
             </span>
+            <button onClick={() => signOut()} title="Cerrar sesión" className="xen-export" style={{ fontFamily: "Inter", fontSize: 12, color: MUTED, background: "rgba(201,162,74,0.08)", border: "1px solid rgba(201,162,74,0.28)", borderRadius: 9, padding: "6px 10px", cursor: "pointer", flexShrink: 0 }}>Salir</button>
           </div>
         </header>
 

@@ -29,18 +29,22 @@ El [`Dockerfile`](./Dockerfile) es multi-stage: compila con Node y sirve `dist/`
    | Arg | Valor |
    |---|---|
    | `VITE_API_BASE` | `https://prueba-n8n-prueba.urdzg3.easypanel.host/webhook/api` |
-   | `VITE_XEN_KEY` | *(ver SECRETS.local.md)* |
-   | `VITE_USER_EMAIL` | `emilianotkpa@gmail.com` |
+   | `VITE_SUPABASE_URL` | `https://prueba-supabase.urdzg3.easypanel.host` |
+   | `VITE_SUPABASE_ANON_KEY` | *(anon key pública — ver README maestro §3)* |
    | `VITE_VAPID_PUBLIC_KEY` | `BDVluEt6EQlVaJotYGsxQFwmU5YbHSxG63sHibN5-rJcyRT_3JdKLd9wCkxewObaFQR2Yppd80uQ_5At6gHNZBk` |
+
+   > **Login activo:** con Supabase Auth, `VITE_XEN_KEY` **ya no es necesaria** y conviene **quitarla** de los Build Args (así deja de exponerse). El frontend manda el JWT del usuario. `VITE_USER_EMAIL` tampoco hace falta (sale de la sesión).
 
 4. **Puerto:** el contenedor expone **80**.
 5. **Dominio + SSL:** `xenilum.autonomasystem.com` (ya está en el CORS de n8n) con certificado. **Web Push exige HTTPS.**
 6. Deploy. Abre en el cel → menú → *Añadir a pantalla de inicio* → aparece el botón **🔔 Activar avisos**.
 
-## ⚠️ Seguridad (importante, leer)
-`VITE_XEN_KEY` queda **en el JS público**: cualquiera que abra la URL puede leerla y golpear los endpoints del CRM. Mitigaciones (elige una):
-- **Rápida:** activar **Basic Auth** en EasyPanel delante de la app (o mantener el dominio no difundido).
-- **Correcta (pendiente):** login con **Supabase** y que el frontend mande el **JWT** en vez de la XEN_KEY (los endpoints ya aceptan `Authorization: Bearer`).
+## 🔐 Login (Supabase Auth)
+- `src/session.js` crea el cliente Supabase (URL + anon key públicas) y expone `authHeaders()` (mete el **JWT** en `Authorization: Bearer`) y `getUserEmail()`.
+- `src/App.jsx` es el *gate*: si no hay sesión muestra `src/Login.jsx` (email + contraseña); si hay, renderiza la consola. Botón **Salir** en el header.
+- Usuarios = los del **CRM** (Supabase Auth, rol `app_metadata.role` admin/equipo). No hay que crear nada nuevo; Emiliano entra con sus credenciales del CRM.
+- Con esto **quita `VITE_XEN_KEY`** de los Build Args: ya no se expone y el backend valida el JWT.
+- Si el login diera **CORS/401**: revisar que el webhook de `Xenilum Chat` (n8n) permita el origen `https://xenilum.autonomasystem.com` y la cabecera `Authorization`.
 
 ## PWA / Web Push
 - `public/manifest.webmanifest`, `public/icon.svg` (isotipo Prisma), `public/sw.js` (push + click + offline shell).

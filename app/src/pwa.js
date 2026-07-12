@@ -1,18 +1,11 @@
 /* Xenilum PWA — registra el Service Worker y gestiona la suscripción a Web Push.
-   Autocontenido: inyecta su propio botón flotante, no toca XenilumChat.jsx. */
+   Usa el JWT de Supabase (via session.js) para autenticar la suscripción. */
+import { authHeaders, getUserEmail } from "./session.js";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
   "https://prueba-n8n-prueba.urdzg3.easypanel.host/webhook/api";
-const XEN_KEY = import.meta.env.VITE_XEN_KEY || "";
-const USER_EMAIL = import.meta.env.VITE_USER_EMAIL || "emilianotkpa@gmail.com";
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
-
-function authHeaders() {
-  const h = { "Content-Type": "application/json" };
-  if (XEN_KEY) h["x-xenilum-key"] = XEN_KEY;
-  return h;
-}
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -27,7 +20,7 @@ async function sendSubscriptionToServer(sub) {
   return fetch(`${API_BASE}/xenilum/push-subscribe`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ userId: USER_EMAIL, subscription: sub }),
+    body: JSON.stringify({ userId: getUserEmail(), subscription: sub }),
   });
 }
 
@@ -42,17 +35,23 @@ async function subscribe(reg) {
   try {
     await sendSubscriptionToServer(sub);
   } catch (e) {
-    // El navegador ya quedó suscrito; si el endpoint aún no existe en n8n, se reintenta luego.
     console.warn("[xenilum] push-subscribe endpoint no disponible aún:", e);
   }
   return sub;
 }
 
-/* ---- Botón flotante "Activar avisos" ---- */
-function mountBell(reg) {
-  if (!VAPID_PUBLIC_KEY) return; // push aún no configurado (sin llave pública) → no mostrar
+let bellMounted = false;
+
+/* Botón flotante "Activar avisos". Se llama tras autenticar (App.jsx). */
+export async function mountPushBell() {
+  if (bellMounted) return;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (!VAPID_PUBLIC_KEY) return; // push aún no configurado
   if (Notification.permission === "granted") return; // ya autorizado
   if (localStorage.getItem("xen_push_dismissed") === "1") return;
+
+  const reg = await navigator.serviceWorker.ready;
+  bellMounted = true;
 
   const btn = document.createElement("button");
   btn.textContent = "🔔 Activar avisos";
@@ -106,6 +105,7 @@ function mountBell(reg) {
   document.body.appendChild(btn);
 }
 
+/* Registra el Service Worker (seguro en cualquier momento; requiere HTTPS en prod). */
 export function initPWA() {
   if (typeof window === "undefined") return;
   if (!("serviceWorker" in navigator)) return;
@@ -113,11 +113,9 @@ export function initPWA() {
   window.addEventListener("load", async () => {
     try {
       const reg = await navigator.serviceWorker.register("/sw.js");
-      // Si ya hay permiso, re-asegura la suscripción en silencio.
+      // Si el permiso ya está dado, re-asegura la suscripción en silencio.
       if ("PushManager" in window && Notification.permission === "granted" && VAPID_PUBLIC_KEY) {
         subscribe(reg).catch(() => {});
-      } else if ("PushManager" in window) {
-        mountBell(reg);
       }
     } catch (e) {
       console.warn("[xenilum] SW registro falló:", e);
