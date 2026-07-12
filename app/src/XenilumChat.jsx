@@ -223,8 +223,8 @@ function EmbersCanvas() {
     const ctx = canvas.getContext("2d");
     let w = 0, h = 0, raf;
     const parts = [];
-    const COUNT = 100;
-    const RISE = 0.75; // suben hasta el 75% de la altura (desde abajo)
+    const COUNT = 250;
+    const RISE = 1; // suben por toda la altura
     const rnd = (a, b) => a + Math.random() * (b - a);
     const spawn = (initial) => {
       const hh = h || window.innerHeight;
@@ -257,15 +257,12 @@ function EmbersCanvas() {
         p.phase += p.sway;
         p.y -= p.vy;
         p.x += p.vx + Math.sin(p.phase) * p.swayAmp;
-        const prog = Math.max(0, Math.min((h - p.y) / travel, 1)); // 0 abajo -> 1 a 3/4
+        const prog = Math.max(0, Math.min((h - p.y) / travel, 1)); // 0 abajo -> 1 arriba
         if (prog >= 1) { Object.assign(p, spawn(false)); continue; }
-        // Aparece abajo, se mantiene, y se apaga como ceniza al acercarse a 3/4.
-        let env;
-        if (prog < 0.1) env = prog / 0.1;
-        else if (prog > 0.55) env = Math.max(0, (1 - prog) / 0.45);
-        else env = 1;
+        const fadeIn = Math.min(prog / 0.05, 1);               // aparecen suave abajo
+        const falloff = Math.pow(1 - prog, 1.4);               // más brillo abajo, se apagan al subir
         const flicker = 0.92 + 0.08 * Math.sin(p.phase * 2.1); // parpadeo muy suave
-        const alpha = env * flicker * 0.6;                     // un poco más brillosas
+        const alpha = fadeIn * falloff * flicker * 0.72;       // base intensa
         if (alpha <= 0.01) continue;
         const rad = p.r * 2.5; // glow ceñido con un toque más de brillo
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
