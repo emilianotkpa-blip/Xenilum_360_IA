@@ -223,7 +223,7 @@ function EmbersCanvas() {
     const ctx = canvas.getContext("2d");
     let w = 0, h = 0, raf;
     const parts = [];
-    const COUNT = 54;
+    const COUNT = 100;
     const RISE = 0.75; // suben hasta el 75% de la altura (desde abajo)
     const rnd = (a, b) => a + Math.random() * (b - a);
     const spawn = (initial) => {
@@ -237,7 +237,7 @@ function EmbersCanvas() {
         sway: rnd(0.004, 0.012),
         swayAmp: rnd(0.04, 0.14),
         phase: Math.random() * Math.PI * 2,
-        hue: rnd(28, 42),             // ámbar/ceniza cálida (menos neón)
+        hue: rnd(38, 47),             // dorado cálido
       };
     };
     const resize = () => {
@@ -265,13 +265,13 @@ function EmbersCanvas() {
         else if (prog > 0.55) env = Math.max(0, (1 - prog) / 0.45);
         else env = 1;
         const flicker = 0.92 + 0.08 * Math.sin(p.phase * 2.1); // parpadeo muy suave
-        const alpha = env * flicker * 0.42;                    // tenue
+        const alpha = env * flicker * 0.6;                     // un poco más brillosas
         if (alpha <= 0.01) continue;
-        const rad = p.r * 2.2; // glow ceñido (no aura de luciérnaga)
+        const rad = p.r * 2.5; // glow ceñido con un toque más de brillo
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
-        g.addColorStop(0, `hsla(${p.hue}, 75%, 58%, ${alpha})`);
-        g.addColorStop(0.5, `hsla(${p.hue}, 70%, 48%, ${alpha * 0.4})`);
-        g.addColorStop(1, `hsla(${p.hue}, 68%, 44%, 0)`);
+        g.addColorStop(0, `hsla(${p.hue}, 92%, 66%, ${alpha})`);
+        g.addColorStop(0.45, `hsla(${p.hue}, 85%, 55%, ${alpha * 0.5})`);
+        g.addColorStop(1, `hsla(${p.hue}, 80%, 48%, 0)`);
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
