@@ -155,6 +155,121 @@ function GlassCard({ children, style }) {
     }}>{children}</div>
   );
 }
+// ---------- Helpers de animación ----------
+function prefersReduced() {
+  return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Cuenta desde 0 hasta el valor (easeOut).
+function useCountUp(target, duration = 1100) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (prefersReduced()) { setV(target); return; }
+    let raf, start = null;
+    const tick = (t) => {
+      if (start == null) start = t;
+      const p = Math.min((t - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setV(target * eased);
+      if (p < 1) raf = requestAnimationFrame(tick); else setV(target);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return v;
+}
+
+// Anima un valor (número o string tipo "$65,000 MXN" / "85%") contando desde 0, preservando prefijo/sufijo.
+function CountUp({ value, style }) {
+  const s = String(value == null ? "" : value);
+  const m = s.match(/^(\D*)([\d.,]+)(.*)$/s);
+  const numStr = m ? m[2] : "";
+  const num = m ? parseFloat(numStr.replace(/,/g, "")) : NaN;
+  const dec = numStr.includes(".") ? (numStr.split(".")[1] || "").length : 0;
+  const cur = useCountUp(isFinite(num) ? num : 0);
+  if (!m || !isFinite(num)) return <span style={style}>{s}</span>;
+  const formatted = cur.toLocaleString("es-MX", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  return <span style={style}>{m[1]}{formatted}{m[3]}</span>;
+}
+
+// Escribe el texto carácter por carácter (solo si animate). Se ejecuta una vez al montar.
+function TypeText({ text, animate, style }) {
+  const full = String(text == null ? "" : text);
+  const [shown, setShown] = useState(animate ? 0 : full.length);
+  const started = useRef(false);
+  useEffect(() => {
+    if (!animate || started.current) return;
+    started.current = true;
+    if (prefersReduced()) { setShown(full.length); return; }
+    let i = 0;
+    const step = Math.max(1, Math.round(full.length / 90));
+    const id = setInterval(() => {
+      i += step;
+      if (i >= full.length) { setShown(full.length); clearInterval(id); }
+      else setShown(i);
+    }, 16);
+    return () => clearInterval(id);
+  }, []);
+  const done = shown >= full.length;
+  return <p style={style}>{full.slice(0, shown)}{!done && <span className="xen-caret">▍</span>}</p>;
+}
+
+// Fondo de cenizas doradas premium (brasas que suben, con brillo y parpadeo).
+function EmbersCanvas() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || prefersReduced()) return;
+    const ctx = canvas.getContext("2d");
+    let w = 0, h = 0, raf;
+    const parts = [];
+    const COUNT = 46;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const spawn = (initial) => ({
+      x: Math.random() * (w || window.innerWidth),
+      y: initial ? Math.random() * (h || window.innerHeight) : (h || window.innerHeight) + 12,
+      r: rnd(0.6, 2.4), vy: rnd(0.15, 0.7), vx: rnd(-0.22, 0.22),
+      life: 0, ttl: rnd(340, 760), hue: rnd(38, 48), flick: Math.random() * Math.PI * 2,
+    });
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = window.innerWidth; h = window.innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + "px"; canvas.style.height = h + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    for (let i = 0; i < COUNT; i++) parts.push(spawn(true));
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalCompositeOperation = "lighter";
+      for (const p of parts) {
+        p.life++;
+        p.y -= p.vy;
+        p.x += p.vx + Math.sin(p.life * 0.02 + p.flick) * 0.12;
+        if (p.y < -12 || p.life > p.ttl) { Object.assign(p, spawn(false)); continue; }
+        const lifeP = p.life / p.ttl;
+        const alpha = Math.sin(Math.min(lifeP, 1) * Math.PI) * (0.55 + 0.45 * Math.sin(p.flick + p.life * 0.1)) * 0.8;
+        const rad = p.r * 4;
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
+        g.addColorStop(0, `hsla(${p.hue}, 90%, 68%, ${Math.max(0, alpha)})`);
+        g.addColorStop(0.4, `hsla(${p.hue}, 85%, 55%, ${Math.max(0, alpha * 0.5)})`);
+        g.addColorStop(1, `hsla(${p.hue}, 85%, 50%, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    window.addEventListener("resize", resize);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+  }, []);
+  return <canvas ref={ref} aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none" }} />;
+}
+
 function BlockTitle({ children }) {
   return (
     <div style={{
@@ -264,7 +379,7 @@ function KpiBlock({ block }) {
       {block.items.map((k, i) => (
         <GlassCard key={i} style={{ padding: 16 }}>
           <div style={{ fontFamily: "Inter", fontSize: 11, color: MUTED, letterSpacing: "0.04em", textTransform: "uppercase" }}>{k.label}</div>
-          <div style={{ fontFamily: "'Sora', sans-serif", fontSize: 26, fontWeight: 700, color: INK, margin: "6px 0 4px" }}>{k.value}</div>
+          <div style={{ fontFamily: "'Sora', sans-serif", fontSize: 26, fontWeight: 700, color: INK, margin: "6px 0 4px" }}><CountUp value={k.value} /></div>
           {k.trend && (
             <div style={{ fontFamily: "Inter", fontSize: 12, fontWeight: 600, color: k.up ? GREEN : AMBER }}>
               {k.up ? "▲ " : "● "}{k.trend}
@@ -542,6 +657,9 @@ function GaugeBlock({ block }) {
   const value = Number(block.value) || 0;
   const target = Number(block.target) || 0;
   const pct = target > 0 ? Math.max(0, Math.min(value / target, 1)) : 0;
+  const animVal = useCountUp(value);
+  const animPct = target > 0 ? Math.max(0, Math.min(animVal / target, 1)) : 0;
+  const endDegA = 180 - 180 * animPct;
   const W = 320, H = 190, cx = 160, cy = 166, r = 128, sw = 20;
   const polar = (deg) => { const a = (Math.PI * deg) / 180; return [cx + r * Math.cos(a), cy - r * Math.sin(a)]; };
   // Semicírculo 180°(izq) -> 0°(der). large-arc siempre 0 (nunca supera 180°).
@@ -565,12 +683,12 @@ function GaugeBlock({ block }) {
       <div ref={wrapRef} style={{ display: "flex", justifyContent: "center" }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 360 }}>
           <path d={arc(180, 0)} fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth={sw} strokeLinecap="round" />
-          {pct > 0 && (
-            <path d={arc(180, endDeg)} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 7px ${color}66)` }} />
+          {animPct > 0 && (
+            <path d={arc(180, endDegA)} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 7px ${color}66)` }} />
           )}
-          <text x={cx} y={cy - 36} textAnchor="middle" style={{ fontFamily: "'Sora', sans-serif", fontSize: 34, fontWeight: 800, fill: INK }}>{fmt(value)}</text>
+          <text x={cx} y={cy - 36} textAnchor="middle" style={{ fontFamily: "'Sora', sans-serif", fontSize: 34, fontWeight: 800, fill: INK }}>{fmt(Math.round(animVal))}</text>
           <text x={cx} y={cy - 14} textAnchor="middle" style={{ fontFamily: "Inter", fontSize: 12.5, fill: MUTED }}>de {fmt(target)}{block.unit ? " " + block.unit : ""}</text>
-          <text x={cx} y={cy + 6} textAnchor="middle" style={{ fontFamily: "'Sora', sans-serif", fontSize: 14, fontWeight: 700, fill: color }}>{Math.round(pct * 100)}%</text>
+          <text x={cx} y={cy + 6} textAnchor="middle" style={{ fontFamily: "'Sora', sans-serif", fontSize: 14, fontWeight: 700, fill: color }}>{Math.round(animPct * 100)}%</text>
           <text x={lx} y={cy + 18} textAnchor="middle" style={{ fontFamily: "Inter", fontSize: 10, fill: MUTED }}>0</text>
           <text x={rx} y={cy + 18} textAnchor="middle" style={{ fontFamily: "Inter", fontSize: 10, fill: MUTED }}>{fmt(target)}</text>
         </svg>
@@ -786,31 +904,40 @@ function PresentationBlock({ block }) {
   );
 }
 
-function BlockRenderer({ blocks, onToggle }) {
+function BlockRenderer({ blocks, onToggle, animate }) {
+  const renderOne = (b) => {
+    switch (b.type) {
+      case "text": return <TypeText text={b.content} animate={animate} style={{ fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.65, color: INK, margin: 0 }} />;
+      case "actions": return <ActionsBlock block={b} />;
+      case "presentation": return <PresentationBlock block={b} />;
+      case "kpis": return <KpiBlock block={b} />;
+      case "chart": return <ChartBlock block={b} />;
+      case "table": return <TableBlock block={b} />;
+      case "list": return <ListBlock block={b} />;
+      case "checklist": return <ChecklistBlock block={b} onToggle={onToggle} />;
+      case "accordion": return <AccordionBlock block={b} onToggle={onToggle} />;
+      case "progress": return <ProgressBlock block={b} />;
+      case "callout": return <CalloutBlock block={b} />;
+      case "diagram": return <DiagramBlock block={b} />;
+      case "svg": return <SvgBlock block={b} />;
+      case "gauge": return <GaugeBlock block={b} />;
+      case "timeline": return <TimelineBlock block={b} />;
+      case "heatmap": return <HeatmapBlock block={b} />;
+      case "image": return <ImageBlock block={b} />;
+      case "code": return <CodeBlock block={b} />;
+      default: return null;
+    }
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {blocks.map((b, i) => {
-        switch (b.type) {
-          case "text": return <p key={i} style={{ fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.65, color: INK, margin: 0 }}>{b.content}</p>;
-          case "actions": return <ActionsBlock key={i} block={b} />;
-          case "presentation": return <PresentationBlock key={i} block={b} />;
-          case "kpis": return <KpiBlock key={i} block={b} />;
-          case "chart": return <ChartBlock key={i} block={b} />;
-          case "table": return <TableBlock key={i} block={b} />;
-          case "list": return <ListBlock key={i} block={b} />;
-          case "checklist": return <ChecklistBlock key={i} block={b} onToggle={onToggle} />;
-          case "accordion": return <AccordionBlock key={i} block={b} onToggle={onToggle} />;
-          case "progress": return <ProgressBlock key={i} block={b} />;
-          case "callout": return <CalloutBlock key={i} block={b} />;
-          case "diagram": return <DiagramBlock key={i} block={b} />;
-          case "svg": return <SvgBlock key={i} block={b} />;
-          case "gauge": return <GaugeBlock key={i} block={b} />;
-          case "timeline": return <TimelineBlock key={i} block={b} />;
-          case "heatmap": return <HeatmapBlock key={i} block={b} />;
-          case "image": return <ImageBlock key={i} block={b} />;
-          case "code": return <CodeBlock key={i} block={b} />;
-          default: return null;
-        }
+        const el = renderOne(b);
+        if (el == null) return null;
+        return (
+          <div key={i} className={animate ? "xen-block" : undefined} style={animate ? { animationDelay: `${Math.min(i * 0.09, 0.7)}s` } : undefined}>
+            {el}
+          </div>
+        );
       })}
     </div>
   );
@@ -939,6 +1066,10 @@ export default function XenilumChat() {
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
   const baseInputRef = useRef("");
+  const [atBottom, setAtBottom] = useState(true);
+  const [hasNew, setHasNew] = useState(false);
+  const [flashKey, setFlashKey] = useState(0);
+  const prevLenRef = useRef(1);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") setPresented(null); };
@@ -954,7 +1085,34 @@ export default function XenilumChat() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, thinking]);
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    const last = messages[messages.length - 1];
+    const grew = messages.length > prevLenRef.current;
+    prevLenRef.current = messages.length;
+    if ((last && last.role === "user") || atBottom) {
+      el.scrollTop = el.scrollHeight;
+      setHasNew(false);
+    } else if (grew && last && last.role === "assistant") {
+      setHasNew(true);
+    }
+    if (grew && last && last.role === "assistant") setFlashKey((k) => k + 1);
+  }, [messages]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight;
+  }, [thinking]);
+  const onScroll = () => {
+    const el = scrollRef.current; if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    setAtBottom(near);
+    if (near) setHasNew(false);
+  };
+  const jumpToBottom = () => {
+    const el = scrollRef.current; if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setHasNew(false);
+  };
 
   const loadConversations = async () => {
     try {
@@ -1142,6 +1300,16 @@ export default function XenilumChat() {
         @keyframes xenInLeft { from { opacity: 0; transform: translateX(-18px) translateY(8px); } to { opacity: 1; transform: none; } }
         .xen-msg-user { animation: xenInRight 0.44s cubic-bezier(0.34,1.42,0.5,1) both; }
         .xen-msg-bot { animation: xenInLeft 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+        @keyframes xenBlockIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        .xen-block { animation: xenBlockIn 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+        .xen-caret { color: ${GOLD_LIGHT}; margin-left: 1px; animation: xenBlink 0.9s step-end infinite; }
+        @keyframes xenBlink { 50% { opacity: 0; } }
+        .xen-flash { position: absolute; top: 64px; left: 0; right: 0; height: 120px; pointer-events: none; z-index: 6; background: radial-gradient(60% 100% at 50% 0%, rgba(228,185,91,0.30), transparent 72%); animation: xenFlashK 0.95s ease-out forwards; }
+        @keyframes xenFlashK { 0% { opacity: 0; } 22% { opacity: 1; } 100% { opacity: 0; } }
+        .xen-jump { transition: all 0.2s ease; }
+        .xen-jump:hover { transform: translateX(-50%) translateY(-2px) !important; box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important; }
+        .xen-jump-new { animation: xenJumpPulse 1.4s ease-in-out infinite; }
+        @keyframes xenJumpPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(228,185,91,0.5); } 50% { box-shadow: 0 0 0 9px rgba(228,185,91,0); } }
         .xen-row:hover td { background: rgba(201,162,74,0.05); }
         .xen-check:hover { background: rgba(201,162,74,0.06) !important; }
         .xen-export { transition: all 0.2s ease; }
@@ -1178,14 +1346,16 @@ export default function XenilumChat() {
         @keyframes splBot { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .spl-word { animation: splUp 0.6s ease 0.55s both; } .spl-tag { animation: splUp 0.6s ease 0.8s both; }
         @keyframes splUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .xen-orb, .xen-msg, .xen-msg-user, .xen-msg-bot, .xen-dot, .xen-think-top, .xen-think-bot, .xen-rep-top, .xen-rep-bot, .spl-top, .spl-bot, .spl-word, .spl-tag, .splash-overlay { animation: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .xen-orb, .xen-msg, .xen-msg-user, .xen-msg-bot, .xen-block, .xen-caret, .xen-flash, .xen-jump-new, .xen-dot, .xen-think-top, .xen-think-bot, .xen-rep-top, .xen-rep-bot, .spl-top, .spl-bot, .spl-word, .spl-tag, .splash-overlay { animation: none !important; } }
       `}</style>
 
       <div className="xen-orb" style={{ width: 380, height: 380, top: "-8%", left: "-6%", background: "radial-gradient(circle, rgba(201,162,74,0.5), transparent 70%)", animation: "xenFloat1 22s ease-in-out infinite" }} />
       <div className="xen-orb" style={{ width: 300, height: 300, bottom: "-10%", right: "-4%", background: "radial-gradient(circle, rgba(228,185,91,0.4), transparent 70%)", animation: "xenFloat2 28s ease-in-out infinite" }} />
       <div className="xen-orb" style={{ width: 220, height: 220, top: "40%", right: "22%", background: "radial-gradient(circle, rgba(201,162,74,0.3), transparent 70%)", animation: "xenFloat3 26s ease-in-out infinite" }} />
 
-      <div style={{ position: "relative", height: "100%", display: "flex" }}>
+      <EmbersCanvas />
+
+      <div style={{ position: "relative", zIndex: 1, height: "100%", display: "flex" }}>
         {/* Sidebar de conversaciones — en móvil es un drawer que flota sobre el chat */}
         <aside style={{
           ...(isMobile
@@ -1252,7 +1422,9 @@ export default function XenilumChat() {
           </div>
         </header>
 
-        <div ref={scrollRef} className="xen-scroll" style={{ flex: 1, overflowY: "auto", padding: "22px 4px", display: "flex", flexDirection: "column", gap: 20 }}>
+        {flashKey > 0 && <div key={flashKey} className="xen-flash" />}
+
+        <div ref={scrollRef} onScroll={onScroll} className="xen-scroll" style={{ flex: 1, overflowY: "auto", padding: "22px 4px", display: "flex", flexDirection: "column", gap: 20 }}>
           {messages.map((m, i) =>
             m.role === "user" ? (
               <div key={i} className="xen-msg xen-msg-user" style={{ alignSelf: "flex-end", maxWidth: "82%" }}>
@@ -1274,7 +1446,7 @@ export default function XenilumChat() {
                         : <button onClick={() => markReportRead(m.report.id)} className="xen-export" style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 600, color: GOLD_LIGHT, background: "rgba(201,162,74,0.08)", border: "1px solid rgba(201,162,74,0.35)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>marcar leído</button>}
                     </div>
                   )}
-                  <BlockRenderer blocks={m.blocks} onToggle={toggleTask} />
+                  <BlockRenderer blocks={m.blocks} onToggle={toggleTask} animate={i === messages.length - 1} />
                 </div>
               </div>
             )
@@ -1285,6 +1457,15 @@ export default function XenilumChat() {
             </div>
           )}
         </div>
+
+        {!atBottom && (
+          <button onClick={jumpToBottom} title="Ir al último mensaje" className={hasNew ? "xen-jump xen-jump-new" : "xen-jump"} style={{
+            position: "absolute", bottom: 104, left: "50%", transform: "translateX(-50%)", zIndex: 8,
+            width: 42, height: 42, borderRadius: "50%", border: "1px solid rgba(201,162,74,0.5)",
+            background: "rgba(10,20,36,0.92)", color: GOLD_LIGHT, fontSize: 18, lineHeight: 1, cursor: "pointer",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+          }}>↓</button>
+        )}
 
         {messages.length <= 1 && !thinking && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", paddingBottom: 12 }}>
