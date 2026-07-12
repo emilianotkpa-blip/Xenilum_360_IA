@@ -1302,6 +1302,10 @@ export default function XenilumChat() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
         .xen-orb { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.5; pointer-events: none; }
+        .xen-beam { position: absolute; pointer-events: none; filter: blur(42px); mix-blend-mode: screen; }
+        @keyframes xenBeamA { 0%,100% { transform: translateX(-4%) rotate(18deg); opacity: .45; } 50% { transform: translateX(4%) rotate(21deg); opacity: .8; } }
+        @keyframes xenBeamB { 0%,100% { transform: translateX(3%) rotate(-13deg); opacity: .38; } 50% { transform: translateX(-4%) rotate(-16deg); opacity: .68; } }
+        @keyframes xenBeamC { 0%,100% { opacity: .32; } 50% { opacity: .58; } }
         @keyframes xenFloat1 { 0%,100% { transform: translate(0,0);} 50% { transform: translate(60px,-40px);} }
         @keyframes xenFloat2 { 0%,100% { transform: translate(0,0);} 50% { transform: translate(-50px,50px);} }
         @keyframes xenFloat3 { 0%,100% { transform: translate(0,0);} 50% { transform: translate(30px,60px);} }
@@ -1360,12 +1364,18 @@ export default function XenilumChat() {
         @keyframes splBot { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .spl-word { animation: splUp 0.6s ease 0.55s both; } .spl-tag { animation: splUp 0.6s ease 0.8s both; }
         @keyframes splUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .xen-orb, .xen-msg, .xen-msg-user, .xen-msg-bot, .xen-block, .xen-caret, .xen-flash, .xen-jump-new, .xen-dot, .xen-think-top, .xen-think-bot, .xen-rep-top, .xen-rep-bot, .spl-top, .spl-bot, .spl-word, .spl-tag, .splash-overlay { animation: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .xen-orb, .xen-beam, .xen-msg, .xen-msg-user, .xen-msg-bot, .xen-block, .xen-caret, .xen-flash, .xen-jump-new, .xen-dot, .xen-think-top, .xen-think-bot, .xen-rep-top, .xen-rep-bot, .spl-top, .spl-bot, .spl-word, .spl-tag, .splash-overlay { animation: none !important; } }
       `}</style>
 
       <div className="xen-orb" style={{ width: 380, height: 380, top: "-8%", left: "-6%", background: "radial-gradient(circle, rgba(201,162,74,0.5), transparent 70%)", animation: "xenFloat1 22s ease-in-out infinite" }} />
       <div className="xen-orb" style={{ width: 300, height: 300, bottom: "-10%", right: "-4%", background: "radial-gradient(circle, rgba(228,185,91,0.4), transparent 70%)", animation: "xenFloat2 28s ease-in-out infinite" }} />
       <div className="xen-orb" style={{ width: 220, height: 220, top: "40%", right: "22%", background: "radial-gradient(circle, rgba(201,162,74,0.3), transparent 70%)", animation: "xenFloat3 26s ease-in-out infinite" }} />
+
+      {/* Luces exteriores: haces dorados suaves que entran desde arriba */}
+      <div className="xen-beam" style={{ top: "-25%", left: "5%", width: 240, height: "150%", background: "linear-gradient(180deg, rgba(228,185,91,0.22), rgba(228,185,91,0.05) 42%, transparent 76%)", animation: "xenBeamA 17s ease-in-out infinite" }} />
+      <div className="xen-beam" style={{ top: "-25%", left: "40%", width: 190, height: "150%", background: "linear-gradient(180deg, rgba(245,227,179,0.18), rgba(245,227,179,0.04) 46%, transparent 80%)", animation: "xenBeamB 21s ease-in-out infinite" }} />
+      <div className="xen-beam" style={{ top: "-25%", right: "8%", width: 210, height: "150%", background: "linear-gradient(180deg, rgba(201,162,74,0.2), rgba(201,162,74,0.04) 44%, transparent 78%)", animation: "xenBeamA 24s ease-in-out infinite reverse" }} />
+      <div style={{ position: "absolute", top: "-15%", left: "14%", right: "14%", height: "52%", pointerEvents: "none", background: "radial-gradient(60% 100% at 50% 0%, rgba(228,185,91,0.13), transparent 70%)", filter: "blur(26px)", mixBlendMode: "screen", animation: "xenBeamC 14s ease-in-out infinite" }} />
 
       <EmbersCanvas />
 
