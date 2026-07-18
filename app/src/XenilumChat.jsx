@@ -1202,14 +1202,16 @@ export default function XenilumChat() {
         rec.continuous = true;
         rec.interimResults = true;
         baseInputRef.current = input ? input.replace(/\s+$/, "") + " " : "";
+        let finalAccum = "";
         rec.onresult = (ev) => {
-          let finalT = "", interim = "";
-          for (let i = 0; i < ev.results.length; i++) {
+          // usar resultIndex: cada resultado final se agrega UNA sola vez (evita el loop que repetía el texto)
+          let interim = "";
+          for (let i = ev.resultIndex; i < ev.results.length; i++) {
             const r = ev.results[i];
-            if (r.isFinal) finalT += r[0].transcript;
+            if (r.isFinal) finalAccum += r[0].transcript + " ";
             else interim += r[0].transcript;
           }
-          setInput(baseInputRef.current + finalT + interim);
+          setInput((baseInputRef.current + finalAccum + interim).replace(/\s+/g, " ").replace(/^\s+/, ""));
         };
         rec.onerror = () => setListening(false);
         rec.onend = () => { setListening(false); recognitionRef.current = null; };
