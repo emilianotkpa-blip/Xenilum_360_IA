@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { authHeaders, getUserEmail, signOut } from "./session.js";
+import { authHeaders, getUserEmail, getUserRole, signOut } from "./session.js";
 import AmbientBackground from "./AmbientBackground.jsx";
 
 // ============================================================
@@ -28,10 +28,9 @@ const API_BASE = import.meta.env.VITE_API_BASE || "https://prueba-n8n-prueba.urd
 // authHeaders (JWT Supabase) y getUserEmail vienen de session.js.
 
 const SUGGESTIONS = [
-  { key: "ingresos", label: "¿Cuánto facturamos este mes?" },
+  { key: "ingresos", label: "¿Cuánto facturamos este mes?", dir: true }, // dir: solo dirección
   { key: "proyectos", label: "Avance de proyectos" },
   { key: "equipo", label: "Equipo y pendientes" },
-  { key: "demo", label: "✦ Bloques nuevos (demo)" },
 ];
 
 // Demo local de los bloques de Fase 2 (se ve sin backend)
@@ -1019,7 +1018,7 @@ function Splash() {
 
 export default function XenilumChat() {
   const [messages, setMessages] = useState([
-    { role: "assistant", blocks: [{ type: "text", content: "Hola Emiliano. Estoy conectado al CRM en vivo. Pregúntame por finanzas, proyectos, tareas o equipo — o prueba «Bloques nuevos (demo)» para ver los de Fase 2." }] },
+    { role: "assistant", blocks: [{ type: "text", content: "Hola. Estoy conectado al CRM en vivo. Pregúntame por proyectos, tareas, bloques, avances o equipo — o dime «registra un avance en …»." }] },
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -1107,7 +1106,7 @@ export default function XenilumChat() {
   };
   const newConversation = () => {
     setConversationId(null);
-    setMessages([{ role: "assistant", blocks: [{ type: "text", content: "Nueva conversación. ¿En qué te ayudo, Emiliano? Finanzas, proyectos, tareas, equipo… o pídeme un deck." }] }]);
+    setMessages([{ role: "assistant", blocks: [{ type: "text", content: "Nueva conversación. ¿En qué te ayudo? Proyectos, tareas, bloques, avances o equipo." }] }]);
     if (window.innerWidth < 760) setSidebarOpen(false);
   };
   const markReportRead = async (id) => {
@@ -1441,7 +1440,7 @@ export default function XenilumChat() {
 
         {messages.length <= 1 && !thinking && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", paddingBottom: 12 }}>
-            {SUGGESTIONS.map((s) => (
+            {SUGGESTIONS.filter((s) => !s.dir || getUserRole() !== "equipo").map((s) => (
               <button key={s.key} className="xen-chip" onClick={() => send(s.label)} style={{
                 fontFamily: "Inter", fontSize: 13, color: GOLD_LIGHT, fontWeight: 500,
                 background: "rgba(201,162,74,0.07)", border: "1px solid rgba(201,162,74,0.3)",

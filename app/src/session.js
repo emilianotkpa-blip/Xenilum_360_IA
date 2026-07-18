@@ -17,10 +17,13 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
 const XEN_KEY = import.meta.env.VITE_XEN_KEY || "";
 let accessToken = null;
 let userEmail = import.meta.env.VITE_USER_EMAIL || "";
+let userRole = ""; // 'admin' | 'equipo' — solo para UI (el backend igual filtra por rol)
 
 function apply(session) {
   accessToken = session?.access_token || null;
   if (session?.user?.email) userEmail = session.user.email;
+  const r = session?.user?.app_metadata?.role;
+  if (r) userRole = r;
 }
 supabase.auth.getSession().then(({ data }) => apply(data.session));
 supabase.auth.onAuthStateChange((_event, session) => apply(session));
@@ -34,6 +37,10 @@ export function authHeaders(extra) {
 
 export function getUserEmail() {
   return userEmail || "emilianotkpa@gmail.com";
+}
+
+export function getUserRole() {
+  return userRole; // '' si aún no se sabe
 }
 
 export function signOut() {
