@@ -849,11 +849,38 @@ function PresentationBlock({ block }) {
   );
 }
 
+function ButtonsBlock({ block }) {
+  const drill = React.useContext(SendCtx);
+  const opts = (block.options || block.buttons || block.choices || [])
+    .map((o) => (typeof o === "string" ? { label: o } : o))
+    .filter((o) => o && (o.label || o.value));
+  if (!opts.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {opts.map((o, i) => (
+        <button
+          key={i}
+          className="xen-chip"
+          onClick={() => drill(o.value || o.label)}
+          style={{
+            fontFamily: "Inter", fontSize: 13, fontWeight: 500, color: GOLD_LIGHT,
+            background: "rgba(201,162,74,0.08)", border: "1px solid rgba(201,162,74,0.35)",
+            borderRadius: 999, padding: "8px 15px", cursor: "pointer",
+          }}
+        >
+          {o.label || o.value}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function BlockRenderer({ blocks, onToggle, animate }) {
   const renderOne = (b) => {
     switch (b.type) {
       case "text": return <TypeText text={b.content} animate={animate} style={{ fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.65, color: INK, margin: 0 }} />;
       case "actions": return <ActionsBlock block={b} />;
+      case "buttons": case "options": case "choices": return <ButtonsBlock block={b} />;
       case "presentation": return <PresentationBlock block={b} />;
       case "kpis": return <KpiBlock block={b} />;
       case "chart": return <ChartBlock block={b} />;
