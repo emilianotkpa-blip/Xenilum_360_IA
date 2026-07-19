@@ -33,6 +33,22 @@ const SUGGESTIONS = [
   { key: "equipo", label: "Equipo y pendientes" },
 ];
 
+function MicIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 1 0-7 0v5.5A3.5 3.5 0 0 0 12 15Z" />
+      <path d="M18 11.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.92V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.58A6 6 0 0 0 18 11.5Z" />
+    </svg>
+  );
+}
+function StopIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2.5" />
+    </svg>
+  );
+}
+
 // Demo local de los bloques de Fase 2 (se ve sin backend)
 const DEMO_FASE2 = [
   { type: "text", content: "Estos son los bloques nuevos de la Fase 2: gauge, timeline, heatmap, image y code. Datos de ejemplo." },
@@ -1037,6 +1053,12 @@ export default function XenilumChat() {
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
   const baseInputRef = useRef("");
+  const taRef = useRef(null);
+  // Auto-crecer el input (textarea) al teclear o dictar, para ver el párrafo completo.
+  useEffect(() => {
+    const el = taRef.current;
+    if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 150) + "px"; }
+  }, [input]);
   const [atBottom, setAtBottom] = useState(true);
   const [hasNew, setHasNew] = useState(false);
   const [flashKey, setFlashKey] = useState(0);
@@ -1194,7 +1216,7 @@ export default function XenilumChat() {
   const toggleMic = () => {
     // Dictado en vivo (preferido): escribe en el input mientras hablas; revisas/editas y TÚ envías.
     if (SpeechRec) {
-      if (listening) { try { recognitionRef.current && recognitionRef.current.stop(); } catch (e) {} return; }
+      if (listening) { setListening(false); try { recognitionRef.current && recognitionRef.current.stop(); } catch (e) {} return; }
       if (thinking) return;
       try {
         const rec = new SpeechRec();
@@ -1239,7 +1261,7 @@ export default function XenilumChat() {
     setMessages((m) => [...m, { role: "user", text: msg }]);
     setThinking(true);
     const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 30000);
+    const to = setTimeout(() => ctrl.abort(), 90000);
     try {
       const res = await fetch(`${API_BASE}/xenilum/chat`, {
         method: "POST", headers: authHeaders(),
@@ -1454,23 +1476,24 @@ export default function XenilumChat() {
 
         <div style={{ paddingBottom: 20 }}>
           <div style={{
-            display: "flex", gap: isMobile ? 7 : 10, alignItems: "center", background: "rgba(255,255,255,0.05)",
+            display: "flex", gap: isMobile ? 7 : 10, alignItems: "flex-end", background: "rgba(255,255,255,0.05)",
             border: `1px solid ${listening ? "rgba(232,139,139,0.55)" : "rgba(201,162,74,0.28)"}`, borderRadius: 18,
             padding: isMobile ? "7px 7px 7px 14px" : "8px 8px 8px 18px",
             backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
             transition: "border-color 0.2s ease",
           }}>
-            <input className="xen-input" value={input} onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && send()}
+            <textarea ref={taRef} className="xen-input" value={input} rows={1}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
               placeholder={listening ? "Escuchando… habla 🎙️" : (transcribing ? "Transcribiendo…" : "Pregúntale a Xenilum…")}
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", fontFamily: "Inter", fontSize: 14.5, color: INK, padding: "8px 0" }} />
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", resize: "none", fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.5, color: INK, padding: "8px 0", maxHeight: 150, overflowY: "auto" }} />
             <button className={(listening || recording) ? "xen-mic-rec" : "xen-send"} onClick={toggleMic} disabled={thinking && !(listening || recording)}
               title={(listening || recording) ? "Detener dictado" : (SpeechRec ? "Dictar por voz" : "Grabar voz")} style={{
                 fontFamily: "Inter", fontWeight: 700, fontSize: 15, lineHeight: 1, flexShrink: 0,
                 color: (listening || recording) ? "#fff" : GOLD_LIGHT, background: (listening || recording) ? RED : "rgba(201,162,74,0.12)",
                 border: (listening || recording) ? "none" : "1px solid rgba(201,162,74,0.4)", borderRadius: 12,
                 padding: isMobile ? "9px 11px" : "10px 13px", cursor: thinking && !(listening || recording) ? "default" : "pointer", opacity: thinking && !(listening || recording) ? 0.5 : 1,
-              }}>{(listening || recording) ? "■" : "🎤"}</button>
+              }}>{(listening || recording) ? <StopIcon /> : <MicIcon />}</button>
             <button className="xen-send" onClick={() => send()} disabled={thinking} title="Enviar" style={{
               fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: isMobile ? 16 : 13.5, color: NAVY_DEEP,
               background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, border: "none", borderRadius: 12, flexShrink: 0,
