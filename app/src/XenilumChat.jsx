@@ -171,6 +171,28 @@ function GlassCard({ children, style }) {
     }}>{children}</div>
   );
 }
+// Une fragmentos de dictado evitando duplicados. Android puede entregar versiones
+// acumulativas de la misma frase ("ayudame", "ayudame a", "ayudame a crear") o repetir
+// un fragmento ya entregado: aquí se colapsan en un solo texto correcto.
+function mergeParts(parts) {
+  const lo = (s) => s.toLowerCase();
+  let out = "";
+  for (const raw of parts) {
+    const p = (raw || "").trim().replace(/\s+/g, " ");
+    if (!p) continue;
+    if (!out) { out = p; continue; }
+    if (lo(p) === lo(out) || lo(out).endsWith(lo(p))) continue;   // repetido
+    if (lo(p).startsWith(lo(out))) { out = p; continue; }         // versión extendida
+    // solapamiento parcial: "hola que" + "que tal" -> "hola que tal"
+    let ov = 0;
+    for (let k = Math.min(out.length, p.length); k > 0; k--) {
+      if (lo(out).slice(-k) === lo(p).slice(0, k)) { ov = k; break; }
+    }
+    out += ov ? p.slice(ov) : " " + p;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
 // ---------- Helpers de animación ----------
 function prefersReduced() {
   return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1232,9 +1254,8 @@ export default function XenilumChat() {
         keepListeningRef.current = true;
         restartsRef.current = 0;
 
-        const compose = (interim) =>
-          (baseInputRef.current + finalsRef.current.filter(Boolean).join(" ") + " " + (interim || ""))
-            .replace(/\s+/g, " ").replace(/^\s+/, "");
+        // Recompone SIEMPRE desde cero (base + finales + interino) colapsando duplicados.
+        const compose = (interim) => mergeParts([baseInputRef.current, ...finalsRef.current, interim]);
 
         const startRec = () => {
           const rec = new SpeechRec();
@@ -1264,7 +1285,7 @@ export default function XenilumChat() {
             // Consolidamos lo dictado en la base y reiniciamos los índices (evita choques).
             if (keepListeningRef.current && restartsRef.current < 60) {
               restartsRef.current++;
-              baseInputRef.current = compose("") + " ";
+              baseInputRef.current = compose("");
               finalsRef.current = [];
               try { startRec(); return; } catch (e) {}
             }
