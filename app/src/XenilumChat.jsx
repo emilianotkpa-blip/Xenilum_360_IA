@@ -1268,6 +1268,9 @@ export default function XenilumChat() {
           rec.continuous = true;
           rec.interimResults = true;
           rec.onresult = (ev) => {
+            // Si esta sesión ya se cerró (p. ej. se envió el mensaje), ignora los eventos
+            // tardíos: si no, volverían a llenar el input que acabamos de vaciar.
+            if (recognitionRef.current !== rec) return;
             // Cada final se guarda POR ÍNDICE (asignación = idempotente). En Android `resultIndex`
             // no siempre avanza y los finales se reenvían: con `+=` el texto se duplicaba.
             let interim = "";
@@ -1286,6 +1289,8 @@ export default function XenilumChat() {
             }
           };
           rec.onend = () => {
+            // Sesión ya reemplazada o cerrada al enviar: no reanudar ni tocar el input.
+            if (recognitionRef.current !== rec) return;
             // Android termina la sesión en cada pausa: si el usuario sigue dictando, reanudamos.
             // Consolidamos lo dictado en la base y reiniciamos los índices (evita choques).
             if (keepListeningRef.current && restartsRef.current < 60) {
@@ -1315,6 +1320,9 @@ export default function XenilumChat() {
   const send = async (text) => {
     keepListeningRef.current = false; // no reanudar el dictado tras enviar
     if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} recognitionRef.current = null; setListening(false); }
+    // Vacía el buffer del dictado: si no, un onresult tardío recompondría el texto ya enviado.
+    finalsRef.current = [];
+    baseInputRef.current = "";
     const msg = (text ?? input).trim();
     if (!msg || thinking) return;
     if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
