@@ -26,3 +26,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Backups de datos (contexto_md, etc.) — no versionar
+backend/workflows/backups/

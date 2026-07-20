@@ -145,3 +145,28 @@ juicio semántico → le toca al consolidador, no a la heurística.
 **Pendiente:** los duplicados **ya escritos** no se limpian solos. El consolidador solo procesa
 proyectos con avances sin consolidar (`consolidado!=true`), así que un contexto viejo y sucio se queda
 igual hasta que haya un avance nuevo. Falta decidir si se corre una pasada de limpieza puntual.
+
+### Limpieza de los duplicados ya escritos (ejecutada 2026-07-20)
+
+Los contextos sucios NO se limpiaban solos, así que se corrió una pasada puntual.
+**Deliberadamente determinística, no con LLM**: un reescritor con modelo podía perder información
+en silencio, que era justo lo que había que evitar.
+
+**Regla aplicada:** se elimina una línea SOLO si otra línea que se conserva es **igual o más larga**
+y **cubre ≥90%** de sus palabras significativas. Siempre se conserva la versión más completa
+(si la nueva cubre a una previa más corta, sustituye a la previa). Nunca se reescribe texto.
+
+**Salvaguardas (abortaban la operación):** que el resultado quedara vacío, que cambiara el número de
+secciones `##`, o que el recorte superara el 60%.
+
+**Backup previo:** `backend/workflows/backups/contexto_md.BACKUP.json` (gitignored — es dato, no código).
+
+**Resultado — 3 líneas fusionadas en 2 proyectos:**
+| Proyecto | Antes → Después | Palabras perdidas |
+|---|---|---|
+| CONTRATOS | 1,863 → 1,312 chars | `identificación, corrección` (la conservada dice "identificar fallas y afinar") |
+| CONTRATOS | — | ninguna (cobertura 1.0) |
+| Sitios Web - invitaciones | 2,426 → 2,186 chars | `sirve` (la conservada dice "servirá" e incluye MÁS detalle) |
+
+`Panel Dashboard - Reclutamiento` y `Diamante de las ventas` quedaron **intactos** (no tenían duplicados).
+Verificado releyendo de NocoDB: los 4 proyectos conservan sus 5 secciones y ninguno quedó vacío.
