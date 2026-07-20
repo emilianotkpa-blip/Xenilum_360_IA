@@ -787,6 +787,7 @@ function CodeBlock({ block }) {
 // --- actions: botones que disparan acciones ejecutables (Fase 3a) ---
 function ActionsBlock({ block }) {
   const runAction = React.useContext(ActionCtx);
+  const drill = React.useContext(SendCtx);
   const [st, setSt] = useState({});   // idx -> 'idle'|'confirm'|'running'|'done'|'error'
   const [res, setRes] = useState({}); // idx -> mensaje
   const items = block.items || [];
@@ -799,6 +800,10 @@ function ActionsBlock({ block }) {
   const click = (i, item) => {
     const s = st[i] || "idle";
     if (s === "running" || s === "done") return;
+    // Salvavidas: si el agente mandó "actions" SIN actionId, en realidad era una ELECCIÓN
+    // (debió usar el bloque "buttons"). Lo tratamos como opción: manda la etiqueta como
+    // mensaje en vez de llamar al endpoint y morir con "Acción no reconocida".
+    if (!item.actionId) { drill(item.label || item.value || ""); return; }
     if (item.confirm && s !== "confirm") { setSt((x) => ({ ...x, [i]: "confirm" })); return; }
     fire(i, item);
   };
