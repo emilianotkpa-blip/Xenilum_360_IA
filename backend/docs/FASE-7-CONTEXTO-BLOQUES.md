@@ -326,3 +326,45 @@ El prompt mostraba `"label":"Crear tarea"` en el esquema pero **nunca decía que
   el paso final de la CAPTURA GUIADA. Prompt 31,956 → **32,185 chars**.
 - *Front:* fallback `item.label || "Ejecutar"`, para que ningún botón vuelva a salir en blanco
   aunque el modelo omita el campo.
+
+---
+
+## 11. "No me dice de quién es quién": etiquetas de acción derivadas en el servidor — 2026-07-20
+
+**Reporte:** Xenilum propuso 3 bloques (Dariana, Bruno, Victoria) y pintó 3 botones **idénticos y sin
+texto** — imposible saber cuál era de quién.
+
+**Causa:** el §10 hizo `label` obligatorio en el prompt, pero **gpt-4.1-mini lo ignora**. En la
+ejecución 45138 los 3 items salieron con `label: undefined`, aunque `dueno` sí venía correcto.
+
+> Lección: una regla de prompt no es una garantía. Si un campo es necesario para que la UI funcione,
+> hay que **rellenarlo en código**, no confiar en que el modelo obedezca.
+
+**Fix — `etiquetarActions()` en el nodo `Finalize chat`.** Si un item de `actions` no trae `label`,
+se deriva de `actionId` + a quién aplica:
+
+```
+crear_bloque + dueno "Dariana Lizeth Poot Mora"  ->  "Crear bloque · Dariana"
+crear_tarea  + titulo largo                       ->  "Crear tarea · Revisar el reporte semana…"
+```
+
+Detalles: solo los nombres de pila que **chocan entre sí** llevan apellido (dos "Victoria" →
+"Victoria Trujillo" / "Victoria Salas", y los demás se quedan cortos); se trunca a 26 chars; si el
+modelo **sí** mandó `label`, se respeta. Corre **antes** de persistir, así que el historial guardado
+también queda con los botones etiquetados.
+
+### Dos trampas de escapado que costaron un intento
+
+1. **`\s` se comió el backslash.** El snippet se generaba dentro de un template literal, dentro de un
+   heredoc: tres capas de escapado. `split(/\s+/)` acabó como **`split(/s+/)`** — partía por la letra
+   "s". Se veía clarísimo en la prueba: *"Bruno **Je**sús"* se cortaba en la `s`, mientras que
+   "Dariana Lizeth Poot Mora" (sin `s` minúscula) no se partía nunca.
+   → **Ahora el código a inyectar vive en su propio archivo `.js` y se lee con `readFileSync`**: cero
+   capas de escapado. Y el snippet usa `split(' ')` en vez de regex, para no depender de escapes.
+2. El primer intento **abortó por una aserción mía mal escrita**, no por el código: metí dos
+   "Victoria" en el caso de prueba y la desambiguación se aplicaba a todos los botones. Se cambió a
+   desambiguar solo los nombres repetidos.
+
+Ambos fallos los cazó la **prueba de la función contra el código ya parcheado** antes del PUT — que es
+justamente el control que faltó en el incidente §9. Vale la pena mantenerlo: *parchear, ejecutar el
+resultado con datos reales, y solo entonces subir.*
