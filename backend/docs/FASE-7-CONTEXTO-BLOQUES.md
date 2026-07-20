@@ -107,3 +107,41 @@ bloques: la verificación 1:1 detectó que el mismo texto existía también en `
 **sí** es correcto (enum de tareas: `Pendiente|En Progreso|Bloqueada|Completada`). Se dejó intacta.
 
 Prompt: 26,691 -> **30,111** chars. Ambos workflows verificados activos.
+
+---
+
+## 6. Contexto duplicado: la causa era el consolidador nocturno — 2026-07-20
+
+**Síntoma:** en `contexto_md` aparecían dos párrafos casi idénticos (parafraseados) diciendo lo mismo.
+
+**Causa (la clave):** NO lo hacía el chat. Existe el workflow **`Xenilum - Consolidacion Contexto Vivo`**
+(`vCo0gP1khkMVbwII`), con **cron diario 8 AM**, que manda `contexto_md` + los avances nuevos a
+**gpt-4.1-mini** para que devuelva el contexto actualizado, y lo reescribe entero.
+Su system prompt decía *"integra los avances"* y *"sé conciso"* — pero **nunca pedía fusionar ni
+deduplicar**. Un modelo chico, ante "integra esto en ese texto", hace lo más seguro: **añade una
+línea nueva que repite lo ya escrito** en vez de reescribir la existente.
+
+**Fix 1 — consolidador (raíz):** nuevas reglas en su system prompt:
+- **FUSIONA, no acumules**: si un avance repite/amplía/corrige algo ya presente, se REESCRIBE esa línea
+  en su lugar. Prohibido agregar otra que diga lo mismo con otras palabras.
+- Cada sección (salvo *Historial reciente*) es un **documento vigente reescrito**, no un log acumulado.
+- Una idea por línea; si una línea mezcla objetivo/arquitectura/estado/pendientes, se parte por sección.
+- **Auto-revisión final**: releer la salida y colapsar duplicados en una sola línea, la más completa.
+
+**Fix 2 — `anotar_contexto` (defensa en profundidad):** el dedupe pasó de exacto/substring a
+**similitud por solapamiento de palabras** (umbral 0.8), que sí atrapa parafraseos.
+
+**Verificación medida (no estimada):**
+| Caso | Similitud | Detectado |
+|---|---|---|
+| Los 2 párrafos de Contratos reportados | **0.95** | ✅ |
+| Nota que engloba a otra + info extra | 0.56 | ❌ (por diseño) |
+| Notas legítimamente distintas | 0.00–0.40 | ✅ no marcadas |
+
+**Límite conocido y deliberado:** el umbral se dejó en 0.8. Bajarlo para atrapar el caso de 0.56
+empezaría a descartar notas buenas (las distintas ya llegan a 0.40). El solapamiento **parcial** es
+juicio semántico → le toca al consolidador, no a la heurística.
+
+**Pendiente:** los duplicados **ya escritos** no se limpian solos. El consolidador solo procesa
+proyectos con avances sin consolidar (`consolidado!=true`), así que un contexto viejo y sucio se queda
+igual hasta que haya un avance nuevo. Falta decidir si se corre una pasada de limpieza puntual.
