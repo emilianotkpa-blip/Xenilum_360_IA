@@ -1333,32 +1333,54 @@ export default function XenilumChat() {
     setInput("");
     setMessages((m) => [...m, { role: "user", text: msg }]);
     setThinking(true);
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 90000);
+
+    // Un intento de POST al agente, con timeout de 90s.
+    const intento = async () => {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 90000);
+      try {
+        const res = await fetch(`${API_BASE}/xenilum/chat`, {
+          method: "POST", headers: await authHeadersAsync(),
+          body: JSON.stringify({ message: msg, userId: getUserEmail(), conversationId }), signal: ctrl.signal,
+        });
+        const raw = await res.text();
+        let data;
+        try { data = JSON.parse(raw); }
+        catch (parseErr) {
+          throw new Error(`el servidor respondió HTTP ${res.status} con algo que no es JSON: ${raw.slice(0, 140)}`);
+        }
+        // El backend responde 200 con {ok:false,error:...} cuando rechaza (p. ej. sesión vencida).
+        if (data.ok === false && data.error) throw new Error(`${data.error} (HTTP ${res.status})`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return data;
+      } finally { clearTimeout(to); }
+    };
+    // "Failed to fetch" (TypeError) = la petición ni siquiera llegó al servidor. Reintentar 1 vez es
+    // seguro (no se procesó nada) y arregla casi todos los cortes de red del celular sin que se note.
+    const esRed = (e) => e && e.name !== "AbortError" && (e instanceof TypeError || /failed to fetch|network|load failed/i.test(String((e && e.message) || e)));
     try {
-      const res = await fetch(`${API_BASE}/xenilum/chat`, {
-        method: "POST", headers: await authHeadersAsync(),
-        body: JSON.stringify({ message: msg, userId: getUserEmail(), conversationId }), signal: ctrl.signal,
-      });
-      const raw = await res.text();
       let data;
-      try { data = JSON.parse(raw); }
-      catch (parseErr) {
-        throw new Error(`el servidor respondió HTTP ${res.status} con algo que no es JSON: ${raw.slice(0, 140)}`);
+      try { data = await intento(); }
+      catch (e1) {
+        if (!esRed(e1)) throw e1;                       // errores de servidor/auth: no reintentar
+        await new Promise((r) => setTimeout(r, 800));
+        data = await intento();                         // 2º intento; si vuelve a fallar, cae al catch
       }
-      // El backend responde 200 con {ok:false,error:...} cuando rechaza (p. ej. sesión vencida).
-      if (data.ok === false && data.error) throw new Error(`${data.error} (HTTP ${res.status})`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (data.conversationId) setConversationId(data.conversationId);
       setMessages((m) => [...m, { role: "assistant", blocks: (data.blocks && data.blocks.length) ? data.blocks : [{ type: "text", content: "Respuesta vacía del servidor." }] }]);
     } catch (e) {
       const detalle = String((e && e.message) || e);
       const esAuth = /no autorizado|unauthorized|401|403/i.test(detalle);
+      const red = esRed(e);
+      // Si la petición no llegó, NO perder lo que el usuario escribió/dictó: se deshace la burbuja
+      // optimista y el texto vuelve al cuadro de texto para reenviarlo con un toque.
+      if (red) { setMessages((m) => (m.length && m[m.length - 1].role === "user" ? m.slice(0, -1) : m)); setInput(msg); }
       setMessages((m) => [...m, { role: "assistant", blocks: [{ type: "callout", variant: "warning", content:
         e.name === "AbortError" ? "La consulta tardó demasiado (timeout 90s). Reintenta."
-        : esAuth ? `Tu sesión no fue aceptada (${detalle}). Cierra sesión con “Salir” y vuelve a entrar.`
+        : esAuth ? `Tu sesión no fue aceptada (${detalle}). Cierra sesión con "Salir" y vuelve a entrar.`
+        : red ? "Se cortó la conexión y tu mensaje no llegó (a veces pasa en el celular). Lo dejé en el cuadro de texto: solo vuelve a enviarlo."
         : `No pude completar la consulta: ${detalle}` }] }]);
-    } finally { clearTimeout(to); setThinking(false); loadConversations(); }
+    } finally { setThinking(false); loadConversations(); }
   };
 
   return (

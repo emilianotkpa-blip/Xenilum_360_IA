@@ -439,3 +439,40 @@ la regla que faltaba:
 > el sistema le PERMITE o le DICE, no en el modelo. Aquí ni siquiera tenía la herramienta.
 > Y cuando una regla de prompt ya existe y aun así se incumple, hay que preguntarse *qué caso concreto
 > no cubre* — no repetirla más fuerte.
+
+---
+
+## 13. "Failed to fetch": un corte de red perdía el mensaje dictado — 2026-07-20
+
+**Reporte:** tras dictar una nota LARGA de arquitectura para NIDO, salió *"No pude completar la
+consulta: Failed to fetch"* y **la nota se perdió**.
+
+**Diagnóstico (esta vez NO era un bug del código).**
+- Todas las ejecuciones de n8n del chat: **success**, 0.2s–13s, ninguna cerca del timeout de 90s.
+- El contexto de NIDO tenía el **Objetivo guardado** pero la sección **Arquitectura VACÍA**.
+- Conclusión: la petición del dictado **nunca llegó a n8n**. `"Failed to fetch"` es un error de red
+  del navegador (la petición no obtuvo respuesta), distinto del abort a 90s (que dice otra cosa) y de
+  `authHeadersAsync` (que atrapa sus errores). Causa típica en un PWA de celular: un micro-corte de
+  red / cambio de wifi↔datos mientras la petición viajaba.
+
+**Lo importante:** esto NO se puede evitar del todo (la red del teléfono es imperfecta), pero **sí se
+puede evitar que duela**. El daño real fue perder un dictado largo, porque `send()` hacía `setInput("")`
+antes del fetch y en el catch no lo restauraba.
+
+**Fix (frontend, `send()`):**
+1. **Reintento automático (1 vez)** solo ante error de RED (`TypeError` / "failed to fetch"), que
+   significa que la petición no llegó — reintentar es seguro y tapa casi todos los cortes del celular
+   sin que el usuario note nada. NO se reintenta ante error de servidor, auth o timeout.
+2. **No perder el mensaje:** si tras el reintento sigue fallando, se deshace la burbuja optimista y el
+   texto **vuelve al cuadro de texto** para reenviarlo con un toque (antes se perdía).
+3. **Mensaje honesto:** *"Se cortó la conexión y tu mensaje no llegó (a veces pasa en el celular). Lo
+   dejé en el cuadro de texto: solo vuelve a enviarlo."*
+
+> Diferencia con §9-§12: aquellos eran **defectos** (código roto, falta de una herramienta). Este es un
+> fallo **inherente al medio** (red móvil). La respuesta correcta no es "arreglar el bug" sino
+> **hacer el envío resiliente**: reintentar lo idempotente y nunca tragarse lo que el usuario escribió.
+
+**Nota de proceso:** al aplicar el edit, el pipeline convirtió las comillas rectas en tipográficas
+(`"` → `“”`) y rompió el build (`Unexpected "“"`). Se corrigió reescribiendo con un script (fs) en vez
+del editor, y se verificó que `npm run build` pasa. Pendiente de redeploy junto con los otros fixes de
+front.
