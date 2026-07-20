@@ -80,3 +80,30 @@ alguna sección/herramienta previa. `backend/docs/system-prompt-xenilum-chat.md`
   y su nota dice que las acciones "llegarán en una fase futura". Conviene reescribirla.
 - Falta probar en vivo: dictar contexto largo (¿se reparte en secciones?), pedir un bloque (¿sale el botón?),
   pedir una presentación (¿ya no vuelca JSON?).
+
+---
+
+## 5. Captura guiada (entrevista) al crear cosas — 2026-07-20
+
+**Petición:** que no adivine. Si le pides "créame un bloque", debe **preguntar** para quién, estado,
+% o dinero, fecha y brief — con **botones de selección única** — y cerrar con el botón de confirmación.
+Igual para tareas (hoy las creaba **sin descripción**) y para llenar el contexto.
+
+**Cómo quedó** (sección `## CAPTURA GUIADA` en el prompt, apoyada en el bloque `buttons` ya existente):
+- Regla general: preguntar **una cosa a la vez**, nunca repetir un dato ya dado, máx ~4 preguntas,
+  y **siempre** cerrar con el bloque `actions` con todos los params llenos.
+- **"Tú elige"** -> el agente escoge un valor sensato, lo dice en una línea y sigue; el humano confirma al final.
+- **Bloque**: proyecto → dueño (botones del equipo + "Sin asignar") → `% del proyecto` / `monto en $` / "Tú decide"
+  (si es %, consulta antes cuánto queda libre) → estado (botones con los valores REALES) → fecha (opcional)
+  → brief (el usuario lo cuenta a grandes rasgos y **el agente lo redacta mejor**).
+- **Tarea**: título accionable → responsable (botones) → prioridad (botones) → proyecto → fecha límite
+  → **`descripcion` SIEMPRE**, redactada por el agente si el usuario no la dicta (prohibido crear sin ella).
+- **Contexto**: modo entrevista sección por sección (objetivo → arquitectura → estado → pendientes),
+  anotando cada respuesta en su sección y confirmando antes de seguir.
+
+**Bug encontrado y corregido de paso:** `crear_bloque` guardaba `estado:'Pendiente'` (capitalizado), pero los
+bloques reales usan `pendiente | en_curso | entregado | pagado` (minúscula). Se corrigió **solo** en la rama de
+bloques: la verificación 1:1 detectó que el mismo texto existía también en `crear_tarea`, donde `'Pendiente'`
+**sí** es correcto (enum de tareas: `Pendiente|En Progreso|Bloqueada|Completada`). Se dejó intacta.
+
+Prompt: 26,691 -> **30,111** chars. Ambos workflows verificados activos.
