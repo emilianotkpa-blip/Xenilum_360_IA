@@ -204,3 +204,50 @@ Ahora dice `% del POOL … O valor (monto) — manda SOLO UNO, el sistema calcul
 
 **Dato ya guardado corregido:** bloque 19 (*Diamante de las ventas*, pool 45,000 × 35% = 15,750):
 `peso_pct 0 → 12.6984` para cuadrar con sus $2,000.
+
+---
+
+## 8. Bloque con `nombre` larguísimo y `brief_md` vacío — 2026-07-20
+
+**Reporte:** *"me pidio que era, y no puso nada en el brief, todo lo puso en nombre, cuando en nombre es algo corto"*.
+
+**Evidencia.** El bloque 19 lo creó el agente; el resto son de humanos. La convención real salta a la vista:
+
+| Bloque | `nombre` | `brief_md` |
+|---|---|---|
+| 17 Conexion con ORVE *(humano)* | 17 chars | 207 chars ✅ |
+| 18 Organizacion y avances *(humano)* | 35 chars | 131 chars ✅ |
+| 20 Revision de workflows *(humano)* | 39 chars | 91 chars ✅ |
+| **19 *(agente)*** | **78 chars** ❌ | **VACÍO** ❌ |
+
+`nombre` es una **etiqueta de tarjeta** (~15-40 chars); el detalle vive en `brief_md`.
+
+**Causa — otra vez el texto del prompt, no el código.** La CAPTURA GUIADA pedía el brief pero
+nunca decía que `nombre` debía ser corto, y el catálogo lo invitaba a lo contrario:
+
+```
+nombre (OBLIGATORIO: qué abarca el bloque)   ← "qué abarca" pide una descripción
+brief_md?                                     ← opcional, así que lo omitía
+```
+
+Con eso, el modelo metía la frase dictada completa en `nombre` y dejaba el brief fuera.
+
+**Fix (prompt, 3 ediciones 1:1):**
+1. Catálogo: `nombre (OBLIGATORIO: etiqueta CORTA de 3-6 palabras, máx ~40 caracteres, como título de tarjeta)`.
+2. Catálogo: `brief_md?` → `brief_md (OBLIGATORIO: la descripción completa, 2-5 líneas)`.
+3. CAPTURA GUIADA paso 6, reescrito para separar explícitamente las dos salidas de un mismo dictado
+   (`nombre` = etiqueta corta, `brief_md` = descripción redactada por él), con el anti-patrón nombrado:
+   *"ERROR COMÚN: meter la frase larga en `nombre` y dejar `brief_md` vacío."*
+
+Prompt: 31,426 → **31,956 chars**. Verificado 1:1 contra el live tras el PUT.
+
+**Dato ya guardado corregido — bloque 19** (sin perder información, la frase larga se movió al brief):
+
+| | antes | después |
+|---|---|---|
+| `nombre` | "Apoyo en creación de landing page y revisión de estructura visual del frontend" (78) | "Landing page y estructura visual" (32) |
+| `brief_md` | *vacío* | "Apoyo en la creación de la landing page y revisión de la estructura visual del frontend." (88) |
+
+> Patrón que se repite en §5, §7 y §8: cuando el agente llena mal un campo, la causa ha sido
+> **el texto del system prompt**, no el código de la acción. Al agregar un campo al catálogo,
+> decir siempre *qué forma* tiene (corto/largo) y *si es obligatorio*, no solo qué significa.
