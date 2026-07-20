@@ -836,7 +836,7 @@ function ActionsBlock({ block }) {
             ) : (
               <button className={done || running ? "" : "xen-send"} style={style} onClick={() => click(i, item)} disabled={running || done}>
                 {done ? "✓ " : error ? "✕ " : running ? "◌ " : danger ? "▲ " : "→ "}
-                {running ? "Ejecutando…" : item.label}
+                {running ? "Ejecutando…" : (item.label || "Ejecutar")}
               </button>
             )}
             {(done || error) && res[i] && (

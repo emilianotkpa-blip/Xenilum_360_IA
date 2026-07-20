@@ -251,3 +251,78 @@ Prompt: 31,426 → **31,956 chars**. Verificado 1:1 contra el live tras el PUT.
 > Patrón que se repite en §5, §7 y §8: cuando el agente llena mal un campo, la causa ha sido
 > **el texto del system prompt**, no el código de la acción. Al agregar un campo al catálogo,
 > decir siempre *qué forma* tiene (corto/largo) y *si es obligatorio*, no solo qué significa.
+
+---
+
+## 9. INCIDENTE: `$'` en `String.replace()` rompió TODAS las acciones — 2026-07-20
+
+**Síntoma:** al confirmar un bloque, el botón devolvía *"No se pudo"* y la app mostraba
+*"No pude ejecutar la acción (error de conexión con n8n)"*.
+
+**Diagnóstico real** (ejecución 45121, nodo `Handle`):
+
+```
+SyntaxError: Invalid or unexpected token
+  ? ('Bloque creado: "'+rec.nombre+'" — '+peso+'% del pool (
+```
+
+**Causa — bug introducido por el fix §7.** En `String.prototype.replace(old, new)`, la cadena de
+reemplazo interpreta `$` como carácter especial: **`$'` significa "todo el texto que sigue al match"**
+(igual que `$&`, `` $` ``, `$1`, `$$`). El mensaje nuevo contenía **dos** `$'`:
+
+```js
+'...% del pool ($' + fmt(valor) + ...      // <- $'
+'...Pool del proyecto: $' + fmt(pool) + ...  // <- $'
+```
+
+Cada uno insertó una copia del **resto del archivo**. Resultado: literal sin cerrar y el código
+duplicado. Se verificó con conteo — todo lo posterior a `crear_bloque` aparecía **3 veces**
+(`A1 + S + A2 + S + A3 + S`), 11,143 → 18,553 chars.
+
+**Alcance:** un `SyntaxError` tumba el nodo `Handle` COMPLETO, así que no falló solo `crear_bloque`
+sino **las 7 acciones**, desde las ~06:40 hasta la reparación.
+
+**Por qué no lo detecté al aplicarlo.** El PUT devolvió 200 y mi verificación post-fix comprobaba
+`code.includes(marcador)` — y los marcadores **seguían presentes** (de hecho, por triplicado).
+Nunca comprobé que el código fuera **sintácticamente válido**.
+
+**Reparación.** Como la corrupción es determinista, el código sano se reconstruyó **derivándolo del
+propio archivo corrupto** (sin re-teclear nada, para no introducir otro typo): se recuperaron `A1`,
+`A2`, `A3` partiendo por el sufijo repetido `S` y se rearmó `P + NEW2 + S`.
+
+### Reglas nuevas para parchear nodos `code` en vivo
+
+1. **Nunca pasar la cadena de reemplazo directa** si puede contener `$`. Usar siempre un **replacer
+   función**, que no interpreta nada:
+   ```js
+   code.replace(OLD, () => NEW)   // ✅   en vez de   code.replace(OLD, NEW)   // ❌
+   ```
+2. **Comprobar la sintaxis antes del PUT**, no solo que los marcadores existan. Los nodos `code` de
+   n8n admiten `await` y `return` a nivel superior, así que `new Function()` da un falso negativo:
+   ```js
+   const AsyncFn = Object.getPrototypeOf(async function(){}).constructor;
+   new AsyncFn(code);   // lanza si hay error de sintaxis
+   ```
+3. **Contar apariciones tras el parche**, no solo `includes()`: cada `actionId` debe salir 1 vez.
+   Un `includes()` pasa igual de bien con el código duplicado 3 veces.
+
+> `includes()` responde "¿está?", y la pregunta correcta era "¿está **una sola vez** y **compila**?".
+
+---
+
+## 10. Botón de acción sin texto — 2026-07-20
+
+En la misma pantalla, el botón salió **vacío**. El agente emitió el item sin `label`:
+
+```json
+{"actionId":"crear_bloque","params":{...}}   // sin "label"
+```
+
+El front hacía `{running ? "Ejecutando…" : item.label}` — sin fallback → botón en blanco.
+El prompt mostraba `"label":"Crear tarea"` en el esquema pero **nunca decía que fuera obligatorio**.
+
+**Fix en dos capas:**
+- *Prompt:* `label` marcado **OBLIGATORIO** (2-4 palabras, imperativo) en el esquema de `actions` y en
+  el paso final de la CAPTURA GUIADA. Prompt 31,956 → **32,185 chars**.
+- *Front:* fallback `item.label || "Ejecutar"`, para que ningún botón vuelva a salir en blanco
+  aunque el modelo omita el campo.
