@@ -1,6 +1,6 @@
 /* Xenilum PWA — registra el Service Worker y gestiona la suscripción a Web Push.
    Usa el JWT de Supabase (via session.js) para autenticar la suscripción. */
-import { authHeaders, getUserEmail } from "./session.js";
+import { authHeadersAsync, getUserEmail } from "./session.js";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -19,7 +19,7 @@ function urlBase64ToUint8Array(base64String) {
 async function sendSubscriptionToServer(sub) {
   return fetch(`${API_BASE}/xenilum/push-subscribe`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeadersAsync(),
     body: JSON.stringify({ userId: getUserEmail(), subscription: sub }),
   });
 }

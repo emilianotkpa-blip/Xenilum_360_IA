@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { authHeaders, getUserEmail, getUserRole, signOut } from "./session.js";
+import { authHeadersAsync, getUserEmail, getUserRole, signOut } from "./session.js";
 import AmbientBackground from "./AmbientBackground.jsx";
 
 // ============================================================
@@ -1134,14 +1134,14 @@ export default function XenilumChat() {
 
   const loadConversations = async () => {
     try {
-      const res = await fetch(`${API_BASE}/xenilum/conversations?user=${encodeURIComponent(getUserEmail())}`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE}/xenilum/conversations?user=${encodeURIComponent(getUserEmail())}`, { headers: await authHeadersAsync() });
       const data = await res.json();
       if (data && data.conversations) setConversations(data.conversations);
     } catch (e) { /* offline */ }
   };
   const openConversation = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/xenilum/messages?conversationId=${id}`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE}/xenilum/messages?conversationId=${id}`, { headers: await authHeadersAsync() });
       const data = await res.json();
       const msgs = (data.messages || []).map((m) => m.role === "user"
         ? { role: "user", text: (m.blocks && m.blocks[0] && m.blocks[0].content) || "" }
@@ -1157,7 +1157,7 @@ export default function XenilumChat() {
     if (window.innerWidth < 760) setSidebarOpen(false);
   };
   const markReportRead = async (id) => {
-    try { await fetch(`${API_BASE}/xenilum/report-read`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ reportId: id }) }); } catch (e) {}
+    try { await fetch(`${API_BASE}/xenilum/report-read`, { method: "PATCH", headers: await authHeadersAsync(), body: JSON.stringify({ reportId: id }) }); } catch (e) {}
     setReportCount((c) => Math.max(0, c - 1));
     setMessages((m) => m.map((x) => (x.report && x.report.id === id ? { ...x, report: { ...x.report, read: true } } : x)));
   };
@@ -1165,7 +1165,7 @@ export default function XenilumChat() {
     loadConversations();
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/xenilum/reports?unread=true`, { headers: authHeaders() });
+        const res = await fetch(`${API_BASE}/xenilum/reports?unread=true`, { headers: await authHeadersAsync() });
         const data = await res.json();
         const reps = (data && data.reports) || [];
         if (reps.length) {
@@ -1178,13 +1178,13 @@ export default function XenilumChat() {
 
   const toggleTask = async (taskId, done) => {
     try {
-      await fetch(`${API_BASE}/xenilum/task-toggle`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ taskId, done }) });
+      await fetch(`${API_BASE}/xenilum/task-toggle`, { method: "PATCH", headers: await authHeadersAsync(), body: JSON.stringify({ taskId, done }) });
     } catch (e) { /* la UI ya reflejó el cambio optimista */ }
   };
 
   const runAction = async (actionId, params) => {
     try {
-      const res = await fetch(`${API_BASE}/xenilum/action`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ actionId, params, userId: getUserEmail() }) });
+      const res = await fetch(`${API_BASE}/xenilum/action`, { method: "POST", headers: await authHeadersAsync(), body: JSON.stringify({ actionId, params, userId: getUserEmail() }) });
       const data = await res.json();
       if (data.url) {
         setMessages((m) => [...m, { role: "assistant", blocks: [
@@ -1210,7 +1210,7 @@ export default function XenilumChat() {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 45000);
     try {
-      const res = await fetch(`${API_BASE}/xenilum/chat`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ type: "audio", data: base64, format, transcribeOnly: true, userId: getUserEmail(), conversationId }), signal: ctrl.signal });
+      const res = await fetch(`${API_BASE}/xenilum/chat`, { method: "POST", headers: await authHeadersAsync(), body: JSON.stringify({ type: "audio", data: base64, format, transcribeOnly: true, userId: getUserEmail(), conversationId }), signal: ctrl.signal });
       const data = await res.json();
       const t = (data.transcription || "").trim();
       if (t) setInput((prev) => (prev ? prev.replace(/\s+$/, "") + " " : "") + t);
@@ -1324,14 +1324,27 @@ export default function XenilumChat() {
     const to = setTimeout(() => ctrl.abort(), 90000);
     try {
       const res = await fetch(`${API_BASE}/xenilum/chat`, {
-        method: "POST", headers: authHeaders(),
+        method: "POST", headers: await authHeadersAsync(),
         body: JSON.stringify({ message: msg, userId: getUserEmail(), conversationId }), signal: ctrl.signal,
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); }
+      catch (parseErr) {
+        throw new Error(`el servidor respondió HTTP ${res.status} con algo que no es JSON: ${raw.slice(0, 140)}`);
+      }
+      // El backend responde 200 con {ok:false,error:...} cuando rechaza (p. ej. sesión vencida).
+      if (data.ok === false && data.error) throw new Error(`${data.error} (HTTP ${res.status})`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (data.conversationId) setConversationId(data.conversationId);
       setMessages((m) => [...m, { role: "assistant", blocks: (data.blocks && data.blocks.length) ? data.blocks : [{ type: "text", content: "Respuesta vacía del servidor." }] }]);
     } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", blocks: [{ type: "callout", variant: "warning", content: e.name === "AbortError" ? "La consulta tardó demasiado (timeout 30s). Reintenta." : "No pude conectar con el webhook de n8n. Revisa que el workflow esté activo." }] }]);
+      const detalle = String((e && e.message) || e);
+      const esAuth = /no autorizado|unauthorized|401|403/i.test(detalle);
+      setMessages((m) => [...m, { role: "assistant", blocks: [{ type: "callout", variant: "warning", content:
+        e.name === "AbortError" ? "La consulta tardó demasiado (timeout 90s). Reintenta."
+        : esAuth ? `Tu sesión no fue aceptada (${detalle}). Cierra sesión con “Salir” y vuelve a entrar.`
+        : `No pude completar la consulta: ${detalle}` }] }]);
     } finally { clearTimeout(to); setThinking(false); loadConversations(); }
   };
 

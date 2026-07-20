@@ -35,6 +35,26 @@ export function authHeaders(extra) {
   return h;
 }
 
+// Versión async: pide la sesión a Supabase, que RENUEVA el token si ya expiró.
+// El access_token dura ~1h; en el celular la PWA puede quedar en segundo plano y
+// el token en memoria queda viejo -> el backend respondía "No autorizado".
+export async function authHeadersAsync(extra) {
+  const h = { "Content-Type": "application/json", ...(extra || {}) };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const t = data && data.session && data.session.access_token;
+    if (t) {
+      accessToken = t;
+      if (data.session.user?.email) userEmail = data.session.user.email;
+      h["Authorization"] = `Bearer ${t}`;
+      return h;
+    }
+  } catch (e) { /* si falla, usamos lo que haya en memoria */ }
+  if (accessToken) h["Authorization"] = `Bearer ${accessToken}`;
+  else if (XEN_KEY) h["x-xenilum-key"] = XEN_KEY;
+  return h;
+}
+
 export function getUserEmail() {
   return userEmail || "emilianotkpa@gmail.com";
 }
