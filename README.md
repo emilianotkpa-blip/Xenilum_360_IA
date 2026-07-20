@@ -42,6 +42,11 @@ Cada tool es un **sub-workflow** de n8n conectado al AI Agent por `ai_tool`. Los
 | **`gestionar_cliente`** | `FmoE7JQpgpLWXLw8` | **Crear/editar CLIENTE** (tabla `mqmf75uo7alxzyr`). Con `Id`=edita, sin `Id`=crea. Req al crear: `nombre_empresa` |
 | **`gestionar_tarea`** | `c9eyg3uB94HhMaEY` | **Crear/editar TAREA** (`m04sve8bcl6exnm`). Req: `titulo`. Campos: prioridad, estado, fecha_limite, hora_limite, equipo_id, proyectos_id, notas |
 | **`gestionar_proyecto`** | `4HSxI3bxP24IKK2E` | **Crear/editar PROYECTO** (`m5qns05nh0vrrwa`). Req: `nombre_proyecto`. Campos: cliente, clientes_id, estado, etapa, costo_total, anticipo, fechas, porcentaje_avance |
+| **`leer_contexto_proyecto`** | `QS9gd7WmDs55urEG` | **Contexto vivo** de un proyecto (id o fuzzy): `contexto_md` + últimos 10 avances + bloques + tareas abiertas. Stripping de `valor` por rol. *(Evolución Bloques/Avances — S2)* |
+| **`registrar_avance`** | `WDHYIrflTla7dWM6` | **Registra un avance** (tabla `avances` `muchsjj3dxba6g4`) y **deriva tareas** (`tareas_nuevas` 1 por línea → Pendiente; `tareas_cerrar` Ids coma → Completada). Req: `proyecto_id`, `resumen`. *(S2)* |
+| **`consultar_bloques_y_reparto`** | `NECd0DOASl7bmCfB` | **Bloques + reparto** de un proyecto (o todos). `direccion`: valor+cascada+acumulado por persona; `equipo`: solo sus bloques. *(S2)* |
+
+> **Bloques/Avances (S2):** las 3 tools de arriba con `*(S2)*` son de la evolución "Bloques, Pool, Avances y Contexto Vivo" (roadmap en `autonoma-crm/docs/EVOLUCION-XENILUM-CRM.md`). En S2 el `rol`/`autor_id` usan default `direccion`/`1` (Emiliano) dentro del Code; **S3** los resolverá por usuario vía `usuarios_whatsapp`. Gateway del CRM para lo mismo: workflow `Gateway CRM - Bloques y Cascada` `veKOEcEa99KSMD7s`.
 
 - **Sin borrar**: por decisión de Emiliano, los "gestionar" solo **crean y editan** (el borrado se hace manual). La edición es **parcial** (solo cambia los campos que se manden).
 - Los `*_id` (equipo_id, proyectos_id, clientes_id) son **números**: el agente los obtiene con las tools de consulta antes de crear/editar.

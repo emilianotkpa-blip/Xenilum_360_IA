@@ -1053,6 +1053,9 @@ export default function XenilumChat() {
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
   const baseInputRef = useRef("");
+  const finalsRef = useRef([]);        // resultados finales por índice (idempotente)
+  const keepListeningRef = useRef(false);
+  const restartsRef = useRef(0);
   const taRef = useRef(null);
   // Auto-crecer el input (textarea) al teclear o dictar, para ver el párrafo completo.
   useEffect(() => {
@@ -1216,31 +1219,66 @@ export default function XenilumChat() {
   const toggleMic = () => {
     // Dictado en vivo (preferido): escribe en el input mientras hablas; revisas/editas y TÚ envías.
     if (SpeechRec) {
-      if (listening) { setListening(false); try { recognitionRef.current && recognitionRef.current.stop(); } catch (e) {} return; }
+      if (listening) {
+        keepListeningRef.current = false; // evita que onend reanude
+        setListening(false);
+        try { recognitionRef.current && recognitionRef.current.stop(); } catch (e) {}
+        return;
+      }
       if (thinking) return;
       try {
-        const rec = new SpeechRec();
-        rec.lang = "es-MX";
-        rec.continuous = true;
-        rec.interimResults = true;
         baseInputRef.current = input ? input.replace(/\s+$/, "") + " " : "";
-        let finalAccum = "";
-        rec.onresult = (ev) => {
-          // usar resultIndex: cada resultado final se agrega UNA sola vez (evita el loop que repetía el texto)
-          let interim = "";
-          for (let i = ev.resultIndex; i < ev.results.length; i++) {
-            const r = ev.results[i];
-            if (r.isFinal) finalAccum += r[0].transcript + " ";
-            else interim += r[0].transcript;
-          }
-          setInput((baseInputRef.current + finalAccum + interim).replace(/\s+/g, " ").replace(/^\s+/, ""));
+        finalsRef.current = [];
+        keepListeningRef.current = true;
+        restartsRef.current = 0;
+
+        const compose = (interim) =>
+          (baseInputRef.current + finalsRef.current.filter(Boolean).join(" ") + " " + (interim || ""))
+            .replace(/\s+/g, " ").replace(/^\s+/, "");
+
+        const startRec = () => {
+          const rec = new SpeechRec();
+          rec.lang = "es-MX";
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.onresult = (ev) => {
+            // Cada final se guarda POR ÍNDICE (asignación = idempotente). En Android `resultIndex`
+            // no siempre avanza y los finales se reenvían: con `+=` el texto se duplicaba.
+            let interim = "";
+            for (let i = 0; i < ev.results.length; i++) {
+              const r = ev.results[i];
+              if (r.isFinal) { finalsRef.current[i] = r[0].transcript.trim(); restartsRef.current = 0; }
+              else interim += r[0].transcript;
+            }
+            setInput(compose(interim));
+          };
+          rec.onerror = (e) => {
+            const err = e && e.error;
+            if (err === "not-allowed" || err === "service-not-allowed") {
+              keepListeningRef.current = false;
+              setListening(false);
+            }
+          };
+          rec.onend = () => {
+            // Android termina la sesión en cada pausa: si el usuario sigue dictando, reanudamos.
+            // Consolidamos lo dictado en la base y reiniciamos los índices (evita choques).
+            if (keepListeningRef.current && restartsRef.current < 60) {
+              restartsRef.current++;
+              baseInputRef.current = compose("") + " ";
+              finalsRef.current = [];
+              try { startRec(); return; } catch (e) {}
+            }
+            keepListeningRef.current = false;
+            setListening(false);
+            recognitionRef.current = null;
+          };
+          recognitionRef.current = rec;
+          rec.start();
         };
-        rec.onerror = () => setListening(false);
-        rec.onend = () => { setListening(false); recognitionRef.current = null; };
-        recognitionRef.current = rec;
-        rec.start();
+
+        startRec();
         setListening(true);
-      } catch (e) { setListening(false); startWhisperRecording(); }
+      } catch (e) { keepListeningRef.current = false; setListening(false); startWhisperRecording(); }
       return;
     }
     // Fallback (navegadores sin Web Speech): grabar → transcribir → rellenar input.
@@ -1249,6 +1287,7 @@ export default function XenilumChat() {
   };
 
   const send = async (text) => {
+    keepListeningRef.current = false; // no reanudar el dictado tras enviar
     if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} recognitionRef.current = null; setListening(false); }
     const msg = (text ?? input).trim();
     if (!msg || thinking) return;
