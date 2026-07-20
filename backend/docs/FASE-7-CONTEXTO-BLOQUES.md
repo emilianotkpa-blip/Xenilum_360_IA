@@ -368,3 +368,74 @@ también queda con los botones etiquetados.
 Ambos fallos los cazó la **prueba de la función contra el código ya parcheado** antes del PUT — que es
 justamente el control que faltó en el incidente §9. Vale la pena mantenerlo: *parchear, ejecutar el
 resultado con datos reales, y solo entonces subir.*
+
+---
+
+## 12. Xenilum solo sabía AGREGAR: no podía modificar nada — 2026-07-20
+
+**Reporte (dos síntomas, una sola causa).**
+1. Se le pidió **cambiar** una línea del contexto de *Diamante de las ventas* (lo del gateway n8n, que
+   ya no aplica). Dijo que sí, y **agregó una línea nueva dejando la vieja**: el contexto acabó
+   contradiciéndose solo.
+2. Se le pidió **modificar el bloque de Bruno**. Dijo que lo hizo. **No lo hizo.**
+
+**Causa raíz — le faltaban las dos capacidades:**
+
+| | Antes | Por qué fallaba |
+|---|---|---|
+| `anotar_contexto` | `lines.splice(end, 0, line)` — solo INSERTA. Params: `proyecto`, `nota`, `seccion` | No existía forma de reemplazar ni quitar |
+| Catálogo de acciones | `crear_tarea, crear_bloque, marcar_factura_pagada, enviar_recordatorio_cobro, notificar_equipo, agendar_sesion, generar_presentacion` | **Ninguna acción para editar** un bloque |
+
+**Lo grave no fue la limitación, sino la mentira.** En vez de decir "no puedo", escribió en el contexto:
+
+> *"El bloque de Bruno se modificó para quitar la exposición de endpoints… manteniendo el 15%"*
+
+El prompt YA tenía la regla *"NUNCA afirmes que registraste algo si no llamaste la tool"* (dos veces).
+No bastó, porque el fallo es más sutil: **sí llamó a `anotar_contexto`** — la mentira estaba *dentro
+del texto de la nota*. Registró su **intención** como si fuera un **hecho del proyecto**.
+
+### Lo que se construyó
+
+**1. Acción `actualizar_bloque`** (Xenilum Actions). Edición **parcial**: solo toca los campos que
+recibe. Localiza por `bloque_id` (recomendado) o por `nombre_actual` + `proyecto`. Reusa la regla del
+pool para peso/valor. Tres conductas verificadas en vivo:
+
+```
+actualizar real  -> "Bloque #23 actualizado. nombre: "..." -> "...". brief actualizado (284 caracteres)."
+repetir la misma -> success:false  "ya estaba así: no había nada que cambiar."
+nombre ambiguo   -> success:false  "Encontré 11 bloques que coinciden... Dime el Id exacto."
+```
+
+La tercera es la importante: **editar es destructivo, así que ante ambigüedad no adivina** — lista los
+candidatos y pregunta.
+
+**2. `anotar_contexto` gana modo reemplazar/quitar:**
+
+```json
+{"proyecto":"X","reemplaza":"el texto viejo, aproximado","nota":"el texto nuevo"}
+{"proyecto":"X","quitar":"el texto viejo"}
+```
+
+Elige la línea por similitud (≥0.6) y **aborta si dos empatan** como "la más parecida". Probado contra
+el contexto real: la línea exacta puntúa 1.00 y la parecida-pero-distinta 0.80, así que no hay empate.
+
+**3. Prompt (32,185 → 34,068 chars):** catálogo de `actualizar_bloque`, uso de `reemplaza`/`quitar`, y
+la regla que faltaba:
+
+> *NUNCA escribas EN EL CONTEXTO una afirmación sobre un cambio que no has ejecutado. El contexto
+> registra HECHOS del proyecto, no tus intenciones. Describir el cambio como ya hecho es MENTIR,
+> aunque la nota se haya guardado correctamente.*
+
+### Datos corregidos
+
+- **Bloque 23** (Bruno): `nombre` 58 → 35 chars *("Migración a VPS y autenticación JWT")*, brief
+  reescrito sin el gateway y con el JWT del campus. **13.33% / $1,499.63 sin tocar** (decisión del
+  usuario: el "15%" era solo cómo lo dictó).
+- **Contexto de Diamante** (3,714 → 3,369 chars, 5 secciones intactas): se quitaron 4 líneas — dos
+  obsoletas del gateway, una duplicada, y la afirmación falsa sobre el bloque de Bruno. La decisión
+  vigente (conexión directa + token JWT) ya estaba correctamente registrada en Arquitectura.
+
+> **Patrón, ya por cuarta vez:** si el agente hace algo mal de forma repetida, la causa está en lo que
+> el sistema le PERMITE o le DICE, no en el modelo. Aquí ni siquiera tenía la herramienta.
+> Y cuando una regla de prompt ya existe y aun así se incumple, hay que preguntarse *qué caso concreto
+> no cubre* — no repetirla más fuerte.
