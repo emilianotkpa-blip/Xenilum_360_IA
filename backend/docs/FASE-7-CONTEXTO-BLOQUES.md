@@ -170,3 +170,37 @@ secciones `##`, o que el recorte superara el 60%.
 
 `Panel Dashboard - Reclutamiento` y `Diamante de las ventas` quedaron **intactos** (no tenían duplicados).
 Verificado releyendo de NocoDB: los 4 proyectos conservan sus 5 secciones y ninguno quedó vacío.
+
+---
+
+## 7. Bloque creado con monto pero 0% (y el editor mostraba $0) — 2026-07-20
+
+**Síntoma:** se pidió un bloque de $2,000; se guardó `valor=2000` pero `peso_pct=0`. En el chat se veía
+"2000", pero al abrirlo en el editor del CRM mostraba **0% y $0 MXN**.
+
+**Causa:** `peso_pct` es la **fuente de verdad** (el editor deriva el dinero desde el %), y `crear_bloque`
+guardaba solo el campo que mandara el usuario, sin calcular el otro.
+
+**La fórmula (deducida de los datos reales, no supuesta):**
+```
+pool     = costo_total × (pool_pct / 100)
+peso_pct = valor / pool × 100
+```
+El % es del **POOL**, no del costo total. Verificado contra los bloques existentes:
+
+| Bloque | Proyecto (costo × pool_pct) | valor | peso_pct guardado | valor/pool |
+|---|---|---|---|---|
+| Fronted en lovable | CONTRATOS (22,000 × 70% = 15,400) | 2,500 | 16.23375 | **16.2338%** ✅ |
+| Conexión con ORVE | CONTRATOS (15,400) | 4,000 | 25.974 | **25.974%** ✅ |
+| Ejecución Orvito IA | Orvito IA (20,000 × 35% = 7,000) | 7,000 | 100 | **100%** ✅ |
+
+**Fix:** `crear_bloque` ahora lee `costo_total` y `pool_pct` del proyecto y **deriva el campo que falte
+en cualquiera de las dos direcciones** (monto→%, o %→monto); guarda SIEMPRE los dos. Si el proyecto no
+tiene `costo_total`/`pool_pct` (pool = 0), lo avisa en el mensaje en vez de guardar un 0 silencioso.
+El mensaje de confirmación ahora muestra `% del pool`, el monto y el pool del proyecto.
+
+**Prompt corregido:** el catálogo decía `peso_pct (qué % del proyecto representa)` — **era incorrecto**.
+Ahora dice `% del POOL … O valor (monto) — manda SOLO UNO, el sistema calcula el otro; NO lo calcules tú`.
+
+**Dato ya guardado corregido:** bloque 19 (*Diamante de las ventas*, pool 45,000 × 35% = 15,750):
+`peso_pct 0 → 12.6984` para cuadrar con sus $2,000.
