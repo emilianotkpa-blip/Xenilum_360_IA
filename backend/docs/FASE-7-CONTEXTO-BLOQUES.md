@@ -476,3 +476,55 @@ antes del fetch y en el catch no lo restauraba.
 (`"` → `“”`) y rompió el build (`Unexpected "“"`). Se corrigió reescribiendo con un script (fs) en vez
 del editor, y se verificó que `npm run build` pasa. Pendiente de redeploy junto con los otros fixes de
 front.
+
+---
+
+## 14. Cambio de modelo: gpt-4.1-mini → Claude Sonnet 5 (OpenRouter) — 2026-07-20
+
+**Decisión: `anthropic/claude-sonnet-5`.** Todos los fallos de §9-§13 fueron de **seguimiento de
+instrucciones** (ignoró `label`, ignoró "nombre corto", ignoró "brief obligatorio", afirmó un cambio
+que no hizo). Ese es justo el eje donde pesa el tier del modelo.
+
+**Consumo real medido** (no estimado — de las ejecuciones de n8n):
+
+| Turno | input | output |
+|---|---|---|
+| Conversación simple | ~11,200 tok | ~160 tok |
+| Con herramientas | ~24,200 tok | ~410 tok |
+| Consulta al CRM (Sonnet 5) | ~34,900 tok | ~500 tok |
+
+**El costo es casi todo ENTRADA** (~19k in vs ~220 out de promedio). Se paga porque el modelo *lea*
+las 9,463 tokens de prompt + snapshot del CRM + memoria de 20 mensajes — no por lo que escribe.
+Consecuencia: la diferencia de precio de salida ($5 vs $10) casi no importa, y **recortar el prompt es
+la mayor palanca de costo**, independiente del modelo.
+
+Precios verificados contra la API de OpenRouter (no de memoria):
+
+| Modelo | in / out por MTok | Contexto | Costo/turno medido |
+|---|---|---|---|
+| `anthropic/claude-haiku-4.5` | $1 / $5 | 200K | $0.037 |
+| **`anthropic/claude-sonnet-5`** | **$2 / $10** | **1M** | **$0.075** |
+| `anthropic/claude-sonnet-4.6` | $3 / $15 | 1M | — |
+
+Sonnet 5 está **más barato que Sonnet 4.6** por precio de introducción (hasta 2026-08-31; luego $3/$15).
+
+### Implementación
+
+- **Credencial NUEVA** `OpenRouter (Xenilum)` (`rFoy5oR5B6rMBUav`), tipo `openAiApi` con
+  `url: https://openrouter.ai/api/v1`. **No se tocó** la credencial compartida `Tto6fLj9V2b9mYaS` —
+  la usan ~30 nodos en workflows activos ajenos (Leads landing, Decks, Gateway Finanzas, Agente
+  Autonoma); cambiarle la URL base los habría roto todos.
+- Solo cambió el nodo `OpenAI Chat Model` de **Xenilum Chat**. Respaldo del estado previo guardado.
+- Probado en vivo: conversación simple (5.2s) y consulta con herramientas al CRM (9.7s, devolvió los
+  7 bloques con dueño y %). Tool calling funciona a través de OpenRouter.
+
+> **Gotcha del schema de n8n:** al crear una credencial `openAiApi` por API, si se **omite** el campo
+> `header`, el condicional del schema cae en la rama que **exige** `headerName`/`headerValue` y
+> responde 400. Hay que mandar `header: false` explícito.
+
+**Para cambiar a Haiku** (mitad de costo): es un solo campo — `value` del nodo `OpenAI Chat Model`
+a `anthropic/claude-haiku-4.5`. La credencial y todo lo demás se quedan igual.
+
+**Seguridad:** la llave estaba en `app/.env` (dentro de OneDrive, que sincroniza a la nube). Se movió
+a `~/.secrets/autonoma/.env` como `OPENROUTER_API_KEY`. No llegó al bundle del front (Vite solo expone
+`VITE_*`) ni a git (`**/.env` está en .gitignore), pero sí estuvo en OneDrive.
