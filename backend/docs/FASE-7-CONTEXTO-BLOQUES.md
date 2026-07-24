@@ -528,3 +528,53 @@ a `anthropic/claude-haiku-4.5`. La credencial y todo lo demás se quedan igual.
 **Seguridad:** la llave estaba en `app/.env` (dentro de OneDrive, que sincroniza a la nube). Se movió
 a `~/.secrets/autonoma/.env` como `OPENROUTER_API_KEY`. No llegó al bundle del front (Vite solo expone
 `VITE_*`) ni a git (`**/.env` está en .gitignore), pero sí estuvo en OneDrive.
+
+---
+
+## 15. Tras el cambio a Sonnet 5: "HTTP 200 con algo que no es JSON" (respuesta vacía) — 2026-07-24
+
+**Reporte:** al pedir *"muéstrame las finanzas"* el front mostró
+*"el servidor respondió HTTP 200 con algo que no es JSON:"* — con el detalle **en blanco**.
+
+**Diagnóstico.** El cuerpo vacío significaba que n8n aceptó la petición pero no devolvió nada. En las
+ejecuciones había dos en **error** (48091, 48086), ambas ~7s, fallando en el nodo `Xenilum Agent`:
+
+```
+Received tool input did not match expected schema
+✖ Required
+  → at query
+```
+
+**Causa — diferencia legítima de comportamiento entre modelos.** Las tools declaran su parámetro con
+`$fromAI('query', ...)`, que n8n marca **requerido**. La descripción de `consultar_bloques_y_reparto`
+decía literalmente *"nombre o Id del proyecto, **o vacio para todos**"*:
+
+- gpt-4.1-mini mandaba `""` (cadena vacía) → pasaba la validación.
+- **Sonnet 5 interpreta "vacío" como omitir el parámetro** → n8n rechaza antes de ejecutar la tool.
+
+Sonnet no está equivocado: si algo es opcional, omitirlo es lo natural. El esquema era el que mentía.
+
+**Peor que el fallo en sí: el modo de fallar.** Un error en el nodo Agent rompe la cadena hacia
+`Finalize chat` y `Respond`, así que el webhook cierra con **200 y cuerpo vacío** — el usuario ve un
+mensaje de error truncado, sin pista de qué pasó.
+
+**Fix — hacer el parámetro realmente opcional**, en las 4 tools que lo usan:
+
+```js
+$fromAI('query','...','string')        // requerido: omitirlo tumba TODA la corrida
+$fromAI('query','...','string','')     // opcional: la tool recibe '' y responde ella misma
+```
+
+Con el default, si el modelo omite el parámetro la tool recibe `''` y su sub-workflow devuelve su
+propio mensaje (*"Falta el proyecto…"*), que el agente puede explicar — en vez de reventar la corrida.
+También se reescribió la descripción ambigua: *"o vacio para todos"* → *"manda la cadena vacía `""`
+para ver TODOS los proyectos"*.
+
+**Verificado con la misma pregunta que falló.** Ahora devuelve **7 bloques** — `text`, `kpis`, `gauge`,
+`chart`, `table`, `callout`, `actions` — con el botón ya etiquetado ("Recordar cobro"). Es notoriamente
+más rica que lo que producía gpt-4.1-mini con la misma consulta.
+
+> **Lección:** al cambiar de modelo, lo que se rompe no es el código sino los **contratos implícitos**
+> que el modelo viejo cumplía por costumbre. "O vacío" era ambiguo desde siempre; solo que un modelo
+> lo resolvía de la manera que el esquema esperaba. La respuesta correcta es arreglar el esquema, no
+> pedirle al modelo que adivine igual que el anterior.
