@@ -1334,10 +1334,11 @@ export default function XenilumChat() {
     setMessages((m) => [...m, { role: "user", text: msg }]);
     setThinking(true);
 
-    // Un intento de POST al agente, con timeout de 90s.
+    // Un intento de POST al agente, con timeout de 180s. Guardar un contexto grande (el modelo
+    // lee todo, razona y escribe) puede tardar ~150s en el servidor; 90s abortaba en falso.
     const intento = async () => {
       const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 90000);
+      const to = setTimeout(() => ctrl.abort(), 180000);
       try {
         const res = await fetch(`${API_BASE}/xenilum/chat`, {
           method: "POST", headers: await authHeadersAsync(),
@@ -1372,11 +1373,14 @@ export default function XenilumChat() {
       const detalle = String((e && e.message) || e);
       const esAuth = /no autorizado|unauthorized|401|403/i.test(detalle);
       const red = esRed(e);
-      // Si la petición no llegó, NO perder lo que el usuario escribió/dictó: se deshace la burbuja
-      // optimista y el texto vuelve al cuadro de texto para reenviarlo con un toque.
+      const abort = e.name === "AbortError";
+      // No perder lo que el usuario escribió/dictó. Red: la petición no llegó → deshacer la burbuja
+      // optimista y devolver el texto. Timeout: el servidor pudo COMPLETAR igual (guardar tarda);
+      // conservar la burbuja pero devolver el texto por si hace falta reenviar.
       if (red) { setMessages((m) => (m.length && m[m.length - 1].role === "user" ? m.slice(0, -1) : m)); setInput(msg); }
+      else if (abort) { setInput(msg); }
       setMessages((m) => [...m, { role: "assistant", blocks: [{ type: "callout", variant: "warning", content:
-        e.name === "AbortError" ? "La consulta tardó demasiado (timeout 90s). Reintenta."
+        abort ? "Esto tardó más de lo normal. Puede que el servidor SÍ lo haya guardado — revisa el contexto/tarea antes de reenviar. Dejé tu mensaje en el cuadro por si acaso. Para textos muy largos, mándalos en 2-3 partes."
         : esAuth ? `Tu sesión no fue aceptada (${detalle}). Cierra sesión con "Salir" y vuelve a entrar.`
         : red ? "Se cortó la conexión y tu mensaje no llegó (a veces pasa en el celular). Lo dejé en el cuadro de texto: solo vuelve a enviarlo."
         : `No pude completar la consulta: ${detalle}` }] }]);
