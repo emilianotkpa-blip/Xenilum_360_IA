@@ -578,3 +578,59 @@ más rica que lo que producía gpt-4.1-mini con la misma consulta.
 > que el modelo viejo cumplía por costumbre. "O vacío" era ambiguo desde siempre; solo que un modelo
 > lo resolvía de la manera que el esquema esperaba. La respuesta correcta es arreglar el esquema, no
 > pedirle al modelo que adivine igual que el anterior.
+
+---
+
+## 16. "No pudo agregarme todo": carrera al guardar varias notas en paralelo — 2026-07-24
+
+**Reporte:** al pedir *"mete todo el contexto, todo completo"* (la spec de ORVE, ~6 secciones), salió
+*"La consulta tardó demasiado (timeout 90s)"* y **faltaban notas** en el contexto.
+
+**Dos fallos en uno:**
+
+**(a) El timeout de 90s del front** — la ejecución del chat tardó **104.7s** (n8n terminó bien; el
+front abortó a los 90s). Turno enorme: Sonnet leyó toda la spec y decidió cómo repartirla.
+
+**(b) EL BUG REAL — carrera de escritura.** Sonnet disparó **6 llamadas a `anotar_contexto` EN
+PARALELO** (todas al mismo segundo). Cada una hace *leer `contexto_md` → agregar su línea → escribir*.
+Al correr en paralelo sobre el MISMO campo, se pisan: la última gana. **De 6 notas, solo 2
+sobrevivieron** — y las 6 devolvieron `ok:true`. El usuario perdió 4 sin ninguna señal.
+
+Por qué aparece ahora: gpt-4.1-mini llamaba las tools **en serie**; Sonnet las **paraleliza**. Y el
+prompt (mío) decía literalmente *"SEPARALO y haz VARIAS llamadas a anotar_contexto, una por seccion"* —
+yo estaba pidiendo el patrón que causa la carrera.
+
+**Por qué "verificar después de escribir" NO alcanza.** Primer intento: un loop que reescribe y
+verifica que su línea quedó. **Se probó con 6 escritores en paralelo (20 corridas) y seguía perdiendo
+~10%.** Es un límite fundamental: con last-write-wins y sin escritura atómica, un escritor con lectura
+vieja puede pisar una línea ya guardada DESPUÉS de que su dueño verificó y salió. Ninguna verificación
+post-escritura cierra esa ventana. (El código viejo perdía 75% en la misma prueba; el loop lo bajaba a
+10%, pero 10% no es cero.)
+
+**El fix correcto: eliminar la concurrencia.** `anotar_contexto` ahora acepta un **arreglo `notas`** y
+las escribe TODAS en una sola lectura-escritura. Un solo escritor = imposible que se pisen. Es la única
+forma 100% correcta sin escrituras atómicas en NocoDB.
+
+- **Nodo** (`Anotar Contexto`): modo lote `{"proyecto":"...","notas":[{seccion,nota},...]}` → un GET, se
+  insertan todas en memoria, un PATCH. Dedupe por nota. Se refactorizó a `secKey()`/`insertar()`/`esDup()`
+  reutilizables. La nota simple conserva un retry best-effort por si el agente aún parte en varias.
+- **Prompt** (34,068 → 34,535): las 3 instrucciones que pedían "varias llamadas" ahora piden UN solo
+  `notas`, con regla dura: *"NUNCA hagas varias llamadas a anotar_contexto para el MISMO proyecto en el
+  mismo turno — se pisan y se pierden notas."*
+
+**Probado:**
+- 6 escritores en paralelo, 20 corridas, código viejo: **-75%**. Loop verify: **-10%**. Lote: no aplica
+  (un solo escritor).
+- Nodo nuevo en local: lote de 6 → las 6 presentes en su sección; dedupe correcto; nota simple OK.
+- **End-to-end en vivo:** pedir 3 notas → **1 sola ejecución** de Anotar (antes 6 paralelas), 6.9s
+  (antes 104.7s), las 3 en su sección.
+
+**Datos recuperados:** las 4 notas perdidas de ORVE (Alcance por fases, Re-alcance, Riesgos,
+Condiciones — ~4,300 chars de spec) se releyeron de las ejecuciones y se re-insertaron. Contexto del
+proyecto 15: 3,033 → 7,306 chars.
+
+> **Lección (van dos con Sonnet):** cambiar de modelo rompe **contratos implícitos** que el viejo
+> cumplía por casualidad. gpt-4.1-mini serializaba las tools; Sonnet las paraleliza — algo perfectamente
+> válido que destapó una carrera latente. Y "verificar después de escribir" es la trampa clásica: parece
+> que arregla la carrera pero solo baja la probabilidad. Sin escritura atómica, la única cura es no tener
+> concurrencia.
