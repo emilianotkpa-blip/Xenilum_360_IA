@@ -33,6 +33,23 @@ const SUGGESTIONS = [
   { key: "equipo", label: "Equipo y pendientes" },
 ];
 
+// Bienvenidas para la pantalla de entrada (una al azar cada vez que se abre / nueva conversación).
+const WELCOMES = [
+  "¿Qué construimos hoy?",
+  "Aquí estoy, conectado al CRM en vivo.",
+  "Tú dime y lo consulto.",
+  "¿En qué andamos?",
+  "Listo para lo que necesites.",
+  "Pregúntame lo que sea del negocio.",
+  "A tus órdenes, dirección.",
+  "¿Cómo vamos hoy?",
+  "Dame un tema y lo desmenuzo.",
+  "Cuéntame qué necesitas ver.",
+  "Empecemos. ¿Por dónde?",
+  "Aquí estoy. ¿Qué revisamos?",
+];
+const pickWelcome = () => WELCOMES[Math.floor(Math.random() * WELCOMES.length)];
+
 function MicIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -1068,6 +1085,7 @@ export default function XenilumChat() {
   const [presented, setPresented] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [welcome, setWelcome] = useState(pickWelcome); // bienvenida random de la pantalla de entrada
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 760);
   const [reportCount, setReportCount] = useState(0);
@@ -1158,6 +1176,7 @@ export default function XenilumChat() {
   };
   const newConversation = () => {
     setConversationId(null);
+    setWelcome(pickWelcome());
     setMessages([{ role: "assistant", blocks: [{ type: "text", content: "Nueva conversación. ¿En qué te ayudo? Proyectos, tareas, bloques, avances o equipo." }] }]);
     if (window.innerWidth < 760) setSidebarOpen(false);
   };
@@ -1387,6 +1406,48 @@ export default function XenilumChat() {
     } finally { setThinking(false); loadConversations(); }
   };
 
+  const isEmpty = messages.length <= 1 && !thinking;
+
+  const chipsRow = (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: isEmpty ? "center" : "flex-start", paddingBottom: 12 }}>
+      {SUGGESTIONS.filter((s) => !s.dir || getUserRole() !== "equipo").map((s) => (
+        <button key={s.key} className="xen-chip" onClick={() => send(s.label)} style={{
+          fontFamily: "Inter", fontSize: 13, color: GOLD_LIGHT, fontWeight: 500,
+          background: "rgba(201,162,74,0.07)", border: "1px solid rgba(201,162,74,0.3)",
+          borderRadius: 999, padding: "9px 16px", backdropFilter: "blur(10px)",
+        }}>{s.label}</button>
+      ))}
+    </div>
+  );
+
+  const inputBox = (
+    <div style={{
+      display: "flex", gap: isMobile ? 7 : 10, alignItems: "flex-end", background: "rgba(255,255,255,0.05)",
+      border: `1px solid ${listening ? "rgba(232,139,139,0.55)" : "rgba(201,162,74,0.28)"}`, borderRadius: 18,
+      padding: isMobile ? "7px 7px 7px 14px" : "8px 8px 8px 18px",
+      backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+      transition: "border-color 0.2s ease",
+    }}>
+      <textarea ref={taRef} className="xen-input" value={input} rows={1}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+        placeholder={listening ? "Escuchando… habla 🎙️" : (transcribing ? "Transcribiendo…" : "Pregúntale a Xenilum…")}
+        style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", resize: "none", fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.5, color: INK, padding: "8px 0", maxHeight: 150, overflowY: "auto" }} />
+      <button className={(listening || recording) ? "xen-mic-rec" : "xen-send"} onClick={toggleMic} disabled={thinking && !(listening || recording)}
+        title={(listening || recording) ? "Detener dictado" : (SpeechRec ? "Dictar por voz" : "Grabar voz")} style={{
+          fontFamily: "Inter", fontWeight: 700, fontSize: 15, lineHeight: 1, flexShrink: 0,
+          color: (listening || recording) ? "#fff" : GOLD_LIGHT, background: (listening || recording) ? RED : "rgba(201,162,74,0.12)",
+          border: (listening || recording) ? "none" : "1px solid rgba(201,162,74,0.4)", borderRadius: 12,
+          padding: isMobile ? "9px 11px" : "10px 13px", cursor: thinking && !(listening || recording) ? "default" : "pointer", opacity: thinking && !(listening || recording) ? 0.5 : 1,
+        }}>{(listening || recording) ? <StopIcon /> : <MicIcon />}</button>
+      <button className="xen-send" onClick={() => send()} disabled={thinking} title="Enviar" style={{
+        fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: isMobile ? 16 : 13.5, color: NAVY_DEEP,
+        background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, border: "none", borderRadius: 12, flexShrink: 0,
+        padding: isMobile ? "10px 14px" : "11px 20px", cursor: "pointer", boxShadow: "0 4px 14px rgba(201,162,74,0.35)", opacity: thinking ? 0.6 : 1,
+      }}>{isMobile ? "➤" : "Enviar"}</button>
+    </div>
+  );
+
   return (
     <PresentCtx.Provider value={setPresented}>
     <ActionCtx.Provider value={runAction}>
@@ -1531,7 +1592,24 @@ export default function XenilumChat() {
 
         {flashKey > 0 && <div key={flashKey} className="xen-flash" />}
 
-        <div ref={scrollRef} onScroll={onScroll} className="xen-scroll" style={{ flex: 1, overflowY: "auto", padding: "22px 4px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div ref={scrollRef} onScroll={onScroll} className="xen-scroll" style={{ flex: 1, overflowY: "auto", padding: "22px 4px", display: "flex", flexDirection: "column", gap: 20, justifyContent: isEmpty ? "center" : "flex-start" }}>
+          {isEmpty ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: isMobile ? 20 : 26, width: "100%", padding: "0 6px", marginTop: -20 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{
+                  fontFamily: "'Sora', sans-serif", fontWeight: 800, letterSpacing: "-0.02em",
+                  fontSize: isMobile ? 40 : 58, lineHeight: 1,
+                  background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,
+                  WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                }}>Xenilum</div>
+                <div style={{ fontFamily: "Inter", fontSize: isMobile ? 15 : 17, color: "rgba(226,232,240,0.82)", marginTop: 14, fontWeight: 400 }}>{welcome}</div>
+              </div>
+              <div style={{ width: "100%", maxWidth: 620 }}>
+                {inputBox}
+              </div>
+              {chipsRow}
+            </div>
+          ) : (<>
           {messages.map((m, i) =>
             m.role === "user" ? (
               <div key={i} className="xen-msg xen-msg-user" style={{ alignSelf: "flex-end", maxWidth: "82%" }}>
@@ -1563,6 +1641,7 @@ export default function XenilumChat() {
               <XenAvatar size={38} motion="think" /><GlassCard style={{ padding: "12px 16px" }}><ThinkingDots label={transcribing ? "Transcribiendo tu audio…" : undefined} /></GlassCard>
             </div>
           )}
+          </>)}
         </div>
 
         {!atBottom && (
@@ -1574,48 +1653,14 @@ export default function XenilumChat() {
           }}>↓</button>
         )}
 
-        {messages.length <= 1 && !thinking && (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", paddingBottom: 12 }}>
-            {SUGGESTIONS.filter((s) => !s.dir || getUserRole() !== "equipo").map((s) => (
-              <button key={s.key} className="xen-chip" onClick={() => send(s.label)} style={{
-                fontFamily: "Inter", fontSize: 13, color: GOLD_LIGHT, fontWeight: 500,
-                background: "rgba(201,162,74,0.07)", border: "1px solid rgba(201,162,74,0.3)",
-                borderRadius: 999, padding: "9px 16px", backdropFilter: "blur(10px)",
-              }}>{s.label}</button>
-            ))}
-          </div>
-        )}
-
+        {!isEmpty && (
         <div style={{ paddingBottom: 20 }}>
-          <div style={{
-            display: "flex", gap: isMobile ? 7 : 10, alignItems: "flex-end", background: "rgba(255,255,255,0.05)",
-            border: `1px solid ${listening ? "rgba(232,139,139,0.55)" : "rgba(201,162,74,0.28)"}`, borderRadius: 18,
-            padding: isMobile ? "7px 7px 7px 14px" : "8px 8px 8px 18px",
-            backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-            transition: "border-color 0.2s ease",
-          }}>
-            <textarea ref={taRef} className="xen-input" value={input} rows={1}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder={listening ? "Escuchando… habla 🎙️" : (transcribing ? "Transcribiendo…" : "Pregúntale a Xenilum…")}
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", resize: "none", fontFamily: "Inter", fontSize: 14.5, lineHeight: 1.5, color: INK, padding: "8px 0", maxHeight: 150, overflowY: "auto" }} />
-            <button className={(listening || recording) ? "xen-mic-rec" : "xen-send"} onClick={toggleMic} disabled={thinking && !(listening || recording)}
-              title={(listening || recording) ? "Detener dictado" : (SpeechRec ? "Dictar por voz" : "Grabar voz")} style={{
-                fontFamily: "Inter", fontWeight: 700, fontSize: 15, lineHeight: 1, flexShrink: 0,
-                color: (listening || recording) ? "#fff" : GOLD_LIGHT, background: (listening || recording) ? RED : "rgba(201,162,74,0.12)",
-                border: (listening || recording) ? "none" : "1px solid rgba(201,162,74,0.4)", borderRadius: 12,
-                padding: isMobile ? "9px 11px" : "10px 13px", cursor: thinking && !(listening || recording) ? "default" : "pointer", opacity: thinking && !(listening || recording) ? 0.5 : 1,
-              }}>{(listening || recording) ? <StopIcon /> : <MicIcon />}</button>
-            <button className="xen-send" onClick={() => send()} disabled={thinking} title="Enviar" style={{
-              fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: isMobile ? 16 : 13.5, color: NAVY_DEEP,
-              background: `linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`, border: "none", borderRadius: 12, flexShrink: 0,
-              padding: isMobile ? "10px 14px" : "11px 20px", cursor: "pointer", boxShadow: "0 4px 14px rgba(201,162,74,0.35)", opacity: thinking ? 0.6 : 1,
-            }}>{isMobile ? "➤" : "Enviar"}</button>
-          </div>
+          {inputBox}
           <div style={{ fontFamily: "Inter", fontSize: 11, color: "rgba(159,176,198,0.55)", textAlign: "center", marginTop: 10 }}>
             Conectado a n8n · datos reales de NocoDB + Supabase
           </div>
         </div>
+        )}
         </div>
       </div>
 
