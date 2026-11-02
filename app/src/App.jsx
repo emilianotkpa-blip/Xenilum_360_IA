@@ -40,12 +40,74 @@ function Loading() {
   );
 }
 
+/**
+ * ¿Entra a la consola? Si Dirección ya le armó su lista de apps en el panel de Permisos del
+ * CRM (`app_metadata.apps`), tiene que incluir 'xenilum'. Sin lista, todo sigue como antes.
+ * Dirección entra siempre.
+ */
+function entraAXenilum(user) {
+  const m = user?.app_metadata || {};
+  if (m.role === "admin" || !Array.isArray(m.apps)) return true;
+  return m.apps.includes("xenilum");
+}
+
+function SinAcceso() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+        background: "linear-gradient(165deg,#0E2340,#04101F 75%)",
+        color: "#F5F1E8",
+        fontFamily: "Inter, system-ui, sans-serif",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ maxWidth: 360 }}>
+        <svg viewBox="0 0 100 100" width="44" height="44" style={{ opacity: 0.85 }} aria-hidden="true">
+          <path d={PRISMA_TOP} fill="#E4B95B" />
+          <path d={PRISMA_BOT} fill="#8A6D2E" opacity=".92" />
+        </svg>
+        <p style={{ fontSize: 17, fontWeight: 600, margin: "14px 0 6px" }}>Tu cuenta no tiene acceso a Xenilum</p>
+        <p style={{ fontSize: 14, color: "rgba(245,241,232,.65)", margin: "0 0 18px" }}>
+          Dirección lo da desde el panel de Permisos del CRM.
+        </p>
+        <button
+          onClick={() => supabase.auth.signOut()}
+          style={{
+            background: "transparent",
+            color: "#E4B95B",
+            border: "1px solid rgba(228,185,91,.45)",
+            borderRadius: 999,
+            padding: "8px 18px",
+            fontSize: 14,
+            cursor: "pointer",
+          }}
+        >
+          Entrar con otra cuenta
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // undefined = cargando sesión; null = sin sesión; objeto = autenticado
   const [session, setSession] = useState(undefined);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    supabase.auth.getSession().then(async ({ data }) => {
+      let s = data.session;
+      // El token guardado trae los permisos de cuando se emitió (hasta una hora atrás): si
+      // con esos no entra, se renueva una vez antes de decir que no.
+      if (s && !entraAXenilum(s.user)) {
+        const { data: r } = await supabase.auth.refreshSession().catch(() => ({ data: null }));
+        if (r && r.session) s = r.session;
+      }
+      setSession(s);
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -57,5 +119,6 @@ export default function App() {
 
   if (session === undefined) return <Loading />;
   if (!session) return <Login />;
+  if (!entraAXenilum(session.user)) return <SinAcceso />;
   return <XenilumChat />;
 }
