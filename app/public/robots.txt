@@ -1,0 +1,5 @@
+# App interna. NO se bloquea el rastreo a proposito: si Google no puede leer la pagina,
+# no ve el noindex y la URL se puede quedar en los resultados. El noindex va en el
+# encabezado X-Robots-Tag y en la <meta> del index.html.
+User-agent: *
+Allow: /
