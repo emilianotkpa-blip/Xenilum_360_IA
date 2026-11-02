@@ -98,6 +98,10 @@ export default function App() {
   const [session, setSession] = useState(undefined);
 
   useEffect(() => {
+    // Mientras se verifica la sesión inicial (y se renueva si hace falta) se ignoran los
+    // eventos de auth: el primero trae el token GUARDADO, y pintarlo enseñaría «sin acceso»
+    // un instante a quien Dirección acaba de darle la app.
+    let listo = false;
     supabase.auth.getSession().then(async ({ data }) => {
       let s = data.session;
       // El token guardado trae los permisos de cuando se emitió (hasta una hora atrás): si
@@ -106,15 +110,18 @@ export default function App() {
         const { data: r } = await supabase.auth.refreshSession().catch(() => ({ data: null }));
         if (r && r.session) s = r.session;
       }
+      listo = true;
       setSession(s);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      if (listo) setSession(s);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Solo ofrecemos activar avisos cuando ya hay sesión.
+  // Solo ofrecemos activar avisos a quien ya entró y tiene acceso a la consola.
   useEffect(() => {
-    if (session) mountPushBell();
+    if (session && entraAXenilum(session.user)) mountPushBell();
   }, [session]);
 
   if (session === undefined) return <Loading />;
