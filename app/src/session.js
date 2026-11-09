@@ -56,7 +56,7 @@ export async function authHeadersAsync(extra) {
 }
 
 export function getUserEmail() {
-  return userEmail || "emilianotkpa@gmail.com";
+  return userEmail;
 }
 
 export function getUserRole() {
