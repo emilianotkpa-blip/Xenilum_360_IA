@@ -16,7 +16,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
 // XEN_KEY solo como fallback de desarrollo. En prod, quita VITE_XEN_KEY y se usa solo el JWT.
 const XEN_KEY = import.meta.env.VITE_XEN_KEY || "";
 let accessToken = null;
-let userEmail = import.meta.env.VITE_USER_EMAIL || "";
+let userEmail = import.meta.env.DEV ? (import.meta.env.VITE_USER_EMAIL || "") : ""; // identidad fija solo en desarrollo
 let userRole = ""; // 'admin' | 'equipo' — solo para UI (el backend igual filtra por rol)
 
 function apply(session) {
