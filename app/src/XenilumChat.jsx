@@ -1087,6 +1087,8 @@ export default function XenilumChat() {
   const [conversations, setConversations] = useState([]);
   const [welcome, setWelcome] = useState(pickWelcome); // bienvenida random de la pantalla de entrada
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
+  // Monitor grande (2560×1440): lista de conversaciones y columna del chat más anchas.
+  const [esGrande, setEsGrande] = useState(() => typeof window !== "undefined" && window.innerWidth >= 2200);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 760);
   const [reportCount, setReportCount] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
@@ -1122,7 +1124,7 @@ export default function XenilumChat() {
     return () => clearTimeout(t);
   }, []);
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 760);
+    const onResize = () => { setIsMobile(window.innerWidth < 760); setEsGrande(window.innerWidth >= 2200); };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -1533,7 +1535,7 @@ export default function XenilumChat() {
                 borderRight: "1px solid rgba(201,162,74,0.16)",
                 boxShadow: sidebarOpen ? "0 0 50px rgba(0,0,0,0.55)" : "none",
                 background: "rgba(6,16,30,0.97)" }
-            : { width: sidebarOpen ? 264 : 0, flexShrink: 0,
+            : { width: sidebarOpen ? (esGrande ? 340 : 264) : 0, flexShrink: 0,
                 transition: "width 0.28s cubic-bezier(0.22,1,0.36,1)",
                 borderRight: sidebarOpen ? "1px solid rgba(201,162,74,0.16)" : "none",
                 background: "rgba(4,16,31,0.35)" }),
@@ -1565,7 +1567,7 @@ export default function XenilumChat() {
           <div onClick={() => setSidebarOpen(false)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "rgba(2,6,14,0.5)" }} />
         )}
         {/* Columna principal */}
-        <div style={{ position: "relative", flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", maxWidth: 860, margin: "0 auto", padding: isMobile ? "0 12px" : "0 16px" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", maxWidth: esGrande ? 1240 : 860, margin: "0 auto", padding: isMobile ? "0 12px" : "0 16px" }}>
         <header style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, padding: isMobile ? "14px 2px 12px" : "18px 4px 14px", borderBottom: "1px solid rgba(201,162,74,0.18)" }}>
           <button onClick={() => setSidebarOpen((v) => !v)} title="Mostrar/ocultar conversaciones" className="xen-export" style={{ fontSize: 17, lineHeight: 1, color: GOLD_LIGHT, background: "rgba(201,162,74,0.1)", border: "1px solid rgba(201,162,74,0.35)", borderRadius: 9, padding: "7px 10px", cursor: "pointer", flexShrink: 0 }}>☰</button>
           <XenAvatar size={isMobile ? 36 : 46} motion="idle" />
@@ -1604,7 +1606,7 @@ export default function XenilumChat() {
                 }}>Xenilum</div>
                 <div style={{ fontFamily: "Inter", fontSize: isMobile ? 15 : 17, color: "rgba(226,232,240,0.82)", marginTop: 14, fontWeight: 400 }}>{welcome}</div>
               </div>
-              <div style={{ width: "100%", maxWidth: 620 }}>
+              <div style={{ width: "100%", maxWidth: esGrande ? 860 : 620 }}>
                 {inputBox}
               </div>
               {chipsRow}
